@@ -17,3 +17,10 @@
 #### Sync the venv to match the lockfile exactly (e.g. after cloning the repo)
 `uv sync`
 
+
+#### Run a Notebook
+
+`uv run jupyter notebook notebooks/fetch_eurosat.ipynb`
+
+
+
