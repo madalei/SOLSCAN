@@ -16,42 +16,45 @@ class Engine:
         print(f"device: {self.device}, loss_fn: {self.loss_fn}, optimizer: {self.optimizer}")
   
 
-    # Define the training and evaluation loop
-    #
-    # We could split the training and evaluation loop into two separate functions, 
-    # "DRY" version here: combine them into a single function that takes a boolean argument to indicate whether we are training or evaluating. 
-    # because the only difference between training and evaluation is whether we compute gradients and update weights (train) or not (eval).
-
-    def run_epoch(self, model, dataloader, train: bool):
-        # if true, set model to training mode, else set to evaluation mode
-        # if false, autograd is disabled, so no gradients are computed and no weights are updated
-        # if false, it s same as model.eval() and torch.no_grad() (!! magic code !!)
-
+    def train_epoch(self, model, dataloader):
         """
-        Run a single epoch of training or evaluation.
+        Run a single training epoch: forward pass, backward pass, weight update.
         @param model: The neural network model
-        @param dataloader: DataLoader object for the dataset (train or validation)
-        @param train: Boolean indicating whether to train or evaluate
-        @return: Tuple of average loss and accuracy for the epoch   
-
-        note: C'est l'entraînement (la loss) qui crée la correspondance entre les images et les labels
+        @param dataloader: DataLoader for the training set
+        @return: Tuple of average loss and accuracy for the epoch
         """
-        
-        model.train(train) 
+        model.train()
         total_loss, correct, total = 0.0, 0, 0
-        with torch.set_grad_enabled(train):
+        for images, labels in dataloader:
+            images, labels = images.to(self.device), labels.to(self.device)
+
+            self.optimizer.zero_grad()
+            outputs = model(images)
+            loss = self.loss_fn(outputs, labels)
+            loss.backward()
+            self.optimizer.step()
+
+            total_loss += loss.item() * images.size(0)
+            correct += (outputs.argmax(1) == labels).sum().item()
+            total += images.size(0)
+
+        return total_loss / total, correct / total
+
+    def eval_epoch(self, model, dataloader):
+        """
+        Run a single evaluation epoch: forward pass only, no gradients, no weight update.
+        @param model: The neural network model
+        @param dataloader: DataLoader for the validation/test set
+        @return: Tuple of average loss and accuracy for the epoch
+        """
+        model.eval()
+        total_loss, correct, total = 0.0, 0, 0
+        with torch.no_grad():
             for images, labels in dataloader:
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                if train:
-                    self.optimizer.zero_grad()
-
-                outputs = model(images)                 # vecteur de 10 nombres, sans signification au départ
-                loss = self.loss_fn(outputs, labels)    # compare à l'entier "vrai label" (ex: 4 pour Industrial)
-
-                if train:
-                    loss.backward()                     # calcule comment ajuster les poids
-                    self.optimizer.step()               # ajuste les poids
+                outputs = model(images)
+                loss = self.loss_fn(outputs, labels)
 
                 total_loss += loss.item() * images.size(0)
                 correct += (outputs.argmax(1) == labels).sum().item()
@@ -73,8 +76,8 @@ class Engine:
         history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
 
         for epoch in range(1, epochs + 1):
-            train_loss, train_accuracy = self.run_epoch(model, train_loader, train=True)
-            val_loss, val_accuracy = self.run_epoch(model, val_loader, train=False)
+            train_loss, train_accuracy = self.train_epoch(model, train_loader)
+            val_loss, val_accuracy = self.eval_epoch(model, val_loader)
 
             history["train_loss"].append(train_loss)
             history["train_acc"].append(train_accuracy)
