@@ -5,6 +5,14 @@ Description et guideline globale du projet:
 ## Objectif
 Le projet consiste à développer un outil d'aide à la prospection photovoltaïque permettant d'identifier automatiquement, à partir d'images satellites, des zones déjà artificialisées susceptibles d'accueillir des projets solaires (friches industrielles, anciennes zones d'activité, terrains minéralisés, grandes surfaces inutilisées)
 
+## Cadre pédagogique
+Le projet s'inscrit dans la validation d'une certification RNCP38616
+Pour etre validée elle doit permettre de valider les blocs de compétences suivants:
+1. C1: Préparez des données non structurées en les convertissant en données numériques et sous forme tabulaire. 
+2. C2: Sélectionnez l'algorithme d'apprentissage profond le plus adapté en comparant les performances et les caractéristiques des différentes familles d'algorithmes. 
+3. C3: Entrainer un modèle d'apprentissage profond en optimisant une loss function à partir des données d'entraînement. 
+4. C4: Déployer efficacement un modèle d'apprentissage profond en utilisant des outils et plateformes de production adaptées.
+
 ## Livrable
 Le livrable final sera un prototype d'application capable d'analyser une zone géographique, de produire une cartographie des zones artificialisées détectées, d'estimer leur surface et de générer une liste de sites candidats à approfondir
 
@@ -92,3 +100,10 @@ Approche recommandée :
 1. établir une baseline avec U-Net ;
 2. comparer avec DeepLabV3+ ;
 3. tester SegFormer comme modèle final privilégié.
+
+
+### Livrable 
+
+- une API Fast Api 
+
+- eventuellement dans un 2eme temps un front end Streamlit avec les sortie sous forme de polygones colorés sur une carte
