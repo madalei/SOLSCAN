@@ -14,6 +14,23 @@ def build_resnet18_classifier(num_classes: int, device) -> nn.Module:
     # Replace the final fully connected layer to match the number of classes in EuroSAT
     # fc layer has in_features=512 for ResNet18, we need to set out_features=len(classes) (numbers of classes in EuroSAT is 10)
     # fc layer is the last layer of the model, we can access it via model.fc (final classifier layer)
+    # "la dernière couche doit produire un vecteur de <num_classes> nombres au lieu de 1000" 
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     return model.to(device)
+
+
+# -----------------------------------------
+# functions for freez / unfreeze strategies
+#
+def freeze_backbone(model: nn.Module) -> None:
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.fc.parameters():
+        param.requires_grad = True
+
+
+def unfreeze_backbone(model: nn.Module) -> None:
+    for param in model.parameters():
+        param.requires_grad = True
+
 
