@@ -6,16 +6,21 @@ from torchvision.datasets import EuroSAT
 
 DATA_DIR = Path.cwd().parent / "data"
 
-def load_eurosat_data():
-    """Fetch EuroSAT dataset"""
-
-    # 1/ Define the data transforms (preprocess to apply to the images when loading the dataset) 
-    # ImageNet normalization since we fine-tune a pretrained ResNet18
-    transform = transforms.Compose([
-        transforms.Resize(64),
+def build_eurosat_transform(tile_size: int = 64):
+    """Preprocessing pipeline (resize/tensor/ImageNet normalization)"""
+    return transforms.Compose([
+        transforms.Resize(tile_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
+
+
+def load_eurosat_data():
+    """Fetch EuroSAT dataset"""
+
+    # 1/ Define the data transforms (preprocess to apply to the images when loading the dataset)
+    # ImageNet normalization since we fine-tune a pretrained ResNet18
+    transform = build_eurosat_transform()
 
     # 2/ Load the EuroSAT dataset with the defined transforms
     # dataset attrs: [classes, ...?] accesible like dataset.classes
