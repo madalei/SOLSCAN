@@ -1,0 +1,12 @@
+.venv
+.git
+__pycache__
+*.pyc
+data
+notebooks
+docs
+.claude
+*.md
+!README.md
+.pytest_cache
+.ipynb_checkpoints
