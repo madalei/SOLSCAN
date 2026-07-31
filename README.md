@@ -22,5 +22,7 @@
 
 `uv run jupyter notebook notebooks/fetch_eurosat.ipynb`
 
+#### Run API and front app
 
-
+`uv run python -m uvicorn api.main:app --reload --port 8000`
+`uv run streamlit run app/streamlit_app.py`
