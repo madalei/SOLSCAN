@@ -5,10 +5,20 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.141.1",
+    "folium>=0.20.0",
     "matplotlib>=3.11.1",
+    "planetary-computer>=1.0.0",
+    "pystac-client>=0.8.3",
+    "rasterio>=1.4.0",
+    "requests>=2.34.2",
     "scikit-learn>=1.9.0",
+    "segmentation-models-pytorch>=0.4.0",
+    "streamlit>=1.60.0",
+    "streamlit-folium>=0.27.3",
     "torch>=2.13.0",
     "torchvision>=0.28.0",
+    "uvicorn[standard]>=0.52.0",
 ]
 
 [dependency-groups]
@@ -17,3 +27,15 @@ dev = [
     "jupyter>=1.1.1",
     "pytest>=9.1.1",
 ]
+
+# CPU-only torch on Linux (Docker deployment target) -- keeps the image small and avoids
+# pulling CUDA wheels on a server with no GPU. macOS (local dev) keeps the default PyPI
+# wheel, which is what provides MPS (Apple Silicon GPU) support via torch.backends.mps.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
