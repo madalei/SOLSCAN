@@ -28,3 +28,18 @@ class ClassifyResponse(BaseModel):
     scene_datetime: str | None
     cloud_cover_pct: float | None
     bbox: tuple[float, float, float, float]
+
+
+class SegmentResponse(BaseModel):
+    """Response for /v2/classify (U-Net pixel-level segmentation) -- see api/segmentation_inference.py."""
+
+    overlay_png_base64: str
+    original_png_base64: str
+    tile_size: int
+    grid_rows: int
+    grid_cols: int
+    class_pixel_counts: dict[str, int]
+    class_pixel_percentages: dict[str, float]
+    scene_datetime: str | None
+    cloud_cover_pct: float | None
+    bbox: tuple[float, float, float, float]
