@@ -22,7 +22,8 @@ EUROSAT_CLASSES = [
     "Pasture", "PermanentCrop", "Residential", "River", "SeaLake",
 ]
 
-CHECKPOINT_PATH = Path(__file__).resolve().parent.parent / "checkpoints" / "resnet18_eurosat.pth"
+#CHECKPOINT_PATH = Path(__file__).resolve().parent.parent / "checkpoints" / "resnet18_eurosat.pth"
+CHECKPOINT_PATH = Path(__file__).resolve().parent.parent / "checkpoints" / "resnet18_eurosat_label_smoothing.pth"
 TILE_SIZE = 64
 SENTINEL2_GSD_M = 10  # meters/pixel
 MAX_TILES = 500  # keeps the synchronous /classify request bounded
