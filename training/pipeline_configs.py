@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable
 from models.resnet18_classifier_builder import build_resnet18_classifier
+from models.unet_builder import build_unet
 
 # TODO for later benchmark experiment, to easy change param config and test them
 
@@ -39,4 +40,13 @@ RESNET18_BASELINE = PipelineConfig(
     name="resnet18_baseline",
     build_model=build_resnet18_classifier,
     num_classes=10,
+)
+
+# 4 classes: fond, parking, industriel/commercial, friche -- see docs/roadmap_segmentation.md §1
+UNET_CONFIG = PipelineConfig(
+    name="unet_landuse",
+    build_model=build_unet,
+    num_classes=4,
+    lr=1e-4,
+    epochs=20,
 )
