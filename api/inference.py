@@ -8,13 +8,12 @@ import planetary_computer
 import pystac_client
 import rasterio
 import torch
-from PIL import Image, ImageDraw
+from PIL import Image
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
 from helpers.dataloaders import build_eurosat_transform
-from helpers.image_utils import crop_to_multiple
-from helpers.palette import get_class_colors
+from helpers.image_utils import build_overlay, crop_to_multiple
 from models.resnet18_classifier_builder import build_resnet18_classifier
 
 # Confirmed order: torchvision.datasets.EuroSAT sorts class folders alphabetically (ImageFolder convention)
@@ -33,6 +32,7 @@ class NoSceneFoundError(Exception):
     pass
 
 
+# AOI means "area of interest" - the rectangle drawn on the map. 
 class AOISizeError(Exception):
     """Base class for AOI-size validation failures -- caught together by a single FastAPI exception handler."""
 
@@ -151,17 +151,6 @@ def classify_grid(image: Image.Image, model, device, transform, tile_size: int =
         preds = model(batch).argmax(1).cpu().tolist()
 
     return image, preds, boxes, n_rows, n_cols
-
-
-def build_overlay(image: Image.Image, boxes, preds, classes: list[str], alpha: int = 90) -> Image.Image:
-    colors = get_class_colors(classes)
-    overlay = image.convert("RGBA")
-    draw_layer = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(draw_layer)
-    for box, pred in zip(boxes, preds):
-        color = colors[classes[pred]] + (alpha,)
-        draw.rectangle(box, fill=color, outline=(0, 0, 0, 255))
-    return Image.alpha_composite(overlay, draw_layer).convert("RGB")
 
 
 def image_to_base64_png(image: Image.Image) -> str:
