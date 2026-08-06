@@ -5,6 +5,8 @@ import torch
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from datetime import date, timedelta
+
 from api.inference import (
     EUROSAT_CLASSES,
     TILE_SIZE,
@@ -52,8 +54,15 @@ def get_classes():
 def classify(request: ClassifyRequest):
     validate_aoi_bbox(request.bbox)
 
+    DEFAULT_DATE_END = date.today()
+    DEFAULT_DATE_START = DEFAULT_DATE_END - timedelta(days=180)
+    DEFAULT_MAX_CLOUD_COVER = 10
+
     image, scene_meta = fetch_sentinel2_rgb(
-        request.bbox, str(request.date_start), str(request.date_end), request.max_cloud_cover
+        bbox=request.bbox,
+        date_start=str(DEFAULT_DATE_START),
+        date_end=str(DEFAULT_DATE_END),
+        max_cloud_cover=DEFAULT_MAX_CLOUD_COVER,
     )
     image, preds, boxes, n_rows, n_cols = classify_grid(image, app.state.model, app.state.device, app.state.transform)
     overlay = build_overlay(image, boxes, preds, EUROSAT_CLASSES)
@@ -71,6 +80,7 @@ def classify(request: ClassifyRequest):
         grid_cols=n_cols,
         tile_counts=tile_counts,
         tile_percentages=tile_percentages,
+        tile_labels=[EUROSAT_CLASSES[p] for p in preds],
         scene_datetime=scene_meta["scene_datetime"],
         cloud_cover_pct=scene_meta["cloud_cover_pct"],
         bbox=request.bbox,
