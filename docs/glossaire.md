@@ -33,3 +33,9 @@ Measure How many predicted positives are correct - Best when false positives are
 
 **Recall**:
 Measure How many actual positives are found - Best when False negatives are costly
+
+**Softmax**:
+Utilisée principalement dans les réseaux de neurones de classification multi-classes. Son rôle est de transformer un vecteur de scores bruts (appelés logits) en probabilités qui somment à 1.
+
+**Train loss**:
+Valeur de la fonction de perte (loss function) calculée sur les données d'entraînement. C'est l'indicateur que le modèle essaie de minimiser pendant l'apprentissage.
