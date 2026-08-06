@@ -16,6 +16,7 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY helpers/ helpers/
 COPY models/ models/
 COPY checkpoints/resnet18_eurosat.pth checkpoints/resnet18_eurosat.pth
+COPY checkpoints/resnet18_eurosat_label_smoothing.pth checkpoints/resnet18_eurosat_label_smoothing.pth
 COPY api/ api/
 RUN uv sync --frozen --no-dev
 
