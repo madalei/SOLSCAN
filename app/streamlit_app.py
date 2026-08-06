@@ -18,6 +18,8 @@ from streamlit_folium import st_folium
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from helpers.image_utils import build_overlay  # noqa: E402
+from helpers.mask_rasterize import CLASS_NAMES as LANDUSE_CLASSES  # noqa: E402
+from helpers.mask_rasterize import CLASS_PREVIEW_COLORS as LANDUSE_COLORS  # noqa: E402
 from helpers.palette import get_class_colors  # noqa: E402
 
 API_BASE_URL = os.environ.get("SOLSCAN_API_URL", "http://localhost:8000")
@@ -145,6 +147,15 @@ if zoom_ok and map_data and map_data.get("last_active_drawing"):
 elif not zoom_ok and map_data and map_data.get("last_active_drawing"):
     st.caption("Rectangle dessiné avant un dézoom — invalide tant que le voyant n'est pas vert. Redessine une fois rapproché.")
 
+use_unet = st.sidebar.toggle(
+    "Modèle U-Net (segmentation landuse)",
+    value=False,
+    help="Off = EuroSAT (classification par tuile 64px, 10 classes). "
+    "On = U-Net (segmentation pixel par pixel, fond/parking/industriel/friche) -- pas encore entraîné.",
+)
+model_endpoint = "/v2/classify" if use_unet else "/classify"
+model_key = "unet" if use_unet else "eurosat"
+
 classify_clicked = st.sidebar.button("Classifier", disabled=bbox is None)
 
 if bbox is None:
@@ -156,7 +167,7 @@ if classify_clicked and bbox is not None:
     }
     with st.spinner("Classification en cours..."):
         try:
-            resp = requests.post(f"{API_BASE_URL}/classify", json=payload, timeout=60)
+            resp = requests.post(f"{API_BASE_URL}{model_endpoint}", json=payload, timeout=60)
         except requests.RequestException:
             st.error(f"Impossible de joindre l'API sur {API_BASE_URL}.")
             resp = None
@@ -170,67 +181,107 @@ if classify_clicked and bbox is not None:
             st.error(detail)
         else:
             st.session_state["classify_result"] = resp.json()
+            # Cache which model produced this result -- rendering below must match it, not
+            # the toggle's *current* position (the user may flip it before re-classifying).
+            st.session_state["classify_model"] = model_key
 
 # Rendering lives outside the "classify_clicked" branch so toggling the class filter below
 # re-renders from the cached result instead of re-calling the API.
 if "classify_result" in st.session_state:
     data = st.session_state["classify_result"]
+    result_model = st.session_state["classify_model"]
     original = Image.open(io.BytesIO(base64.b64decode(data["original_png_base64"])))
 
-    only_industrial = st.sidebar.toggle("Afficher uniquement la classe 'Industrial'", value=False)
-    only_classes = {"Industrial"} if only_industrial else None
+    if result_model == "eurosat":
+        only_industrial = st.sidebar.toggle("Afficher uniquement la classe 'Industrial'", value=False)
+        only_classes = {"Industrial"} if only_industrial else None
 
-    tile_size = data["tile_size"]
-    n_rows, n_cols = data["grid_rows"], data["grid_cols"]
-    boxes = [
-        (col * tile_size, row * tile_size, (col + 1) * tile_size, (row + 1) * tile_size)
-        for row in range(n_rows)
-        for col in range(n_cols)
-    ]
-    preds = [classes.index(label) for label in data["tile_labels"]]
-    overlay = build_overlay(original, boxes, preds, classes, only_classes=only_classes, confidences=data["tile_confidences"])
+        tile_size = data["tile_size"]
+        n_rows, n_cols = data["grid_rows"], data["grid_cols"]
+        boxes = [
+            (col * tile_size, row * tile_size, (col + 1) * tile_size, (row + 1) * tile_size)
+            for row in range(n_rows)
+            for col in range(n_cols)
+        ]
+        preds = [classes.index(label) for label in data["tile_labels"]]
+        overlay = build_overlay(original, boxes, preds, classes, only_classes=only_classes, confidences=data["tile_confidences"])
 
-    col1, col2 = st.columns(2)
-    col1.image(original, caption="Image Sentinel-2", use_container_width=True)
-    col2.image(overlay, caption=f"Classification ({n_cols}x{n_rows} tuiles)", use_container_width=True)
+        col1, col2 = st.columns(2)
+        col1.image(original, caption="Image Sentinel-2", use_container_width=True)
+        col2.image(overlay, caption=f"Classification ({n_cols}x{n_rows} tuiles)", use_container_width=True)
 
-    cloud_cover = data["cloud_cover_pct"]
-    st.caption(f"Scène du {data['scene_datetime']} — couverture nuageuse {cloud_cover:.1f}%" if cloud_cover is not None else f"Scène du {data['scene_datetime']}")
+        cloud_cover = data["cloud_cover_pct"]
+        st.caption(f"Scène du {data['scene_datetime']} — couverture nuageuse {cloud_cover:.1f}%" if cloud_cover is not None else f"Scène du {data['scene_datetime']}")
 
-    legend_classes = [c for c in classes if not only_industrial or c == "Industrial"]
-    colors = get_class_colors(classes)
-    legend_cols = st.columns(len(legend_classes))
-    for c, col in zip(legend_classes, legend_cols):
-        r, g, b = colors[c]
-        col.markdown(
-            f"<div style='background-color:rgb({r},{g},{b});padding:4px;text-align:center;"
-            f"color:white;font-size:11px;border-radius:3px'>{c}</div>",
-            unsafe_allow_html=True,
+        legend_classes = [c for c in classes if not only_industrial or c == "Industrial"]
+        colors = get_class_colors(classes)
+        legend_cols = st.columns(len(legend_classes))
+        for c, col in zip(legend_classes, legend_cols):
+            r, g, b = colors[c]
+            col.markdown(
+                f"<div style='background-color:rgb({r},{g},{b});padding:4px;text-align:center;"
+                f"color:white;font-size:11px;border-radius:3px'>{c}</div>",
+                unsafe_allow_html=True,
+            )
+
+
+        st.subheader("Répartition par classe")
+        table = [
+            {"Classe": c, "Tuiles": data["tile_counts"][c], "%": data["tile_percentages"][c]}
+            for c in legend_classes
+        ]
+        st.dataframe(table, use_container_width=True, hide_index=True)
+
+        st.subheader("Zones classifiées sur la carte")
+        st.caption(
+            "L'overlay est géoréférencé sur ses coordonnées réelles. L'image est recadrée à un "
+            "nombre entier de tuiles côté API, donc ses bords peuvent différer de quelques "
+            "dizaines de mètres du rectangle dessiné plus haut."
         )
+        min_lon, min_lat, max_lon, max_lat = data["bbox"]
+        result_map = folium.Map(location=[(min_lat + max_lat) / 2, (min_lon + max_lon) / 2], zoom_start=15)
+        folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(result_map)
+        folium.TileLayer("Esri.WorldImagery", name="Satellite (Esri)", attr="Esri").add_to(result_map)
+        ImageOverlay(
+            image=np.array(overlay),
+            bounds=[[min_lat, min_lon], [max_lat, max_lon]],
+            opacity=0.8,
+            name="Classification",
+        ).add_to(result_map)
+        folium.LayerControl(collapsed=False).add_to(result_map)
+        MousePosition(position="bottomleft", separator=" | ", prefix="Coordonnées :", num_digits=5).add_to(result_map)
+        st_folium(result_map, key="result_map", width=900, height=500, returned_objects=[])
 
-    st.subheader("Répartition par classe")
-    table = [
-        {"Classe": c, "Tuiles": data["tile_counts"][c], "%": data["tile_percentages"][c]}
-        for c in legend_classes
-    ]
-    st.dataframe(table, use_container_width=True, hide_index=True)
+        st.subheader("Répartition par classe")
+        table = [
+            {"Classe": c, "Tuiles": data["tile_counts"][c], "%": data["tile_percentages"][c]}
+            for c in legend_classes
+        ]
+        st.dataframe(table, use_container_width=True, hide_index=True)
 
-    st.subheader("Zones classifiées sur la carte")
-    st.caption(
-        "L'overlay est géoréférencé sur ses coordonnées réelles. L'image est recadrée à un "
-        "nombre entier de tuiles côté API, donc ses bords peuvent différer de quelques "
-        "dizaines de mètres du rectangle dessiné plus haut."
-    )
-    min_lon, min_lat, max_lon, max_lat = data["bbox"]
-    result_map = folium.Map(location=[(min_lat + max_lat) / 2, (min_lon + max_lon) / 2], zoom_start=15)
-    folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(result_map)
-    folium.TileLayer("Esri.WorldImagery", name="Satellite (Esri)", attr="Esri").add_to(result_map)
-    ImageOverlay(
-        image=np.array(overlay),
-        bounds=[[min_lat, min_lon], [max_lat, max_lon]],
-        opacity=0.8,
-        name="Classification",
-    ).add_to(result_map)
-    folium.LayerControl(collapsed=False).add_to(result_map)
-    MousePosition(position="bottomleft", separator=" | ", prefix="Coordonnées :", num_digits=5).add_to(result_map)
-    st_folium(result_map, key="result_map", width=900, height=500, returned_objects=[])
+    else:  # result_model == "unet"
+        overlay = Image.open(io.BytesIO(base64.b64decode(data["overlay_png_base64"])))
+
+        col1, col2 = st.columns(2)
+        col1.image(original, caption="Image Sentinel-2", use_container_width=True)
+        col2.image(overlay, caption=f"Segmentation ({data['grid_cols']}x{data['grid_rows']} tuiles)", use_container_width=True)
+
+        cloud_cover = data["cloud_cover_pct"]
+        st.caption(f"Scène du {data['scene_datetime']} — couverture nuageuse {cloud_cover:.1f}%" if cloud_cover is not None else f"Scène du {data['scene_datetime']}")
+
+        legend_cols = st.columns(len(LANDUSE_CLASSES))
+        for class_id, (name, col) in enumerate(zip(LANDUSE_CLASSES, legend_cols)):
+            r, g, b = LANDUSE_COLORS[class_id]
+            col.markdown(
+                f"<div style='background-color:rgb({r},{g},{b});padding:4px;text-align:center;"
+                f"color:white;font-size:11px;border-radius:3px'>{name}</div>",
+                unsafe_allow_html=True,
+            )
+
+        st.subheader("Répartition par classe (% de pixels)")
+        table = [
+            {"Classe": name, "Pixels": data["class_pixel_counts"][name], "%": data["class_pixel_percentages"][name]}
+            for name in LANDUSE_CLASSES
+        ]
+        st.dataframe(table, use_container_width=True, hide_index=True)
+
