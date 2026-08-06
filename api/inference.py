@@ -148,9 +148,10 @@ def classify_grid(image: Image.Image, model, device, transform, tile_size: int =
 
     batch = torch.stack(tiles).to(device)
     with torch.no_grad():
-        preds = model(batch).argmax(1).cpu().tolist()
+        probs = torch.softmax(model(batch), dim=1)
+        confidences, preds = probs.max(dim=1)
 
-    return image, preds, boxes, n_rows, n_cols
+    return image, preds.cpu().tolist(), confidences.cpu().tolist(), boxes, n_rows, n_cols
 
 
 def image_to_base64_png(image: Image.Image) -> str:

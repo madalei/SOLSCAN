@@ -24,6 +24,7 @@ class ClassifyResponse(BaseModel):
     tile_counts: dict[str, int]
     tile_percentages: dict[str, float]
     tile_labels: list[str] = Field(..., description="Predicted class per tile, row-major (row then col), matching grid_rows x grid_cols")
+    tile_confidences: list[float] = Field(..., description="Softmax confidence (0-1) of the predicted class, same order as tile_labels")
     scene_datetime: str | None
     cloud_cover_pct: float | None
     bbox: tuple[float, float, float, float]

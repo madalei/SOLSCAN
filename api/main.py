@@ -64,8 +64,8 @@ def classify(request: ClassifyRequest):
         date_end=str(DEFAULT_DATE_END),
         max_cloud_cover=DEFAULT_MAX_CLOUD_COVER,
     )
-    image, preds, boxes, n_rows, n_cols = classify_grid(image, app.state.model, app.state.device, app.state.transform)
-    overlay = build_overlay(image, boxes, preds, EUROSAT_CLASSES)
+    image, preds, confidences, boxes, n_rows, n_cols = classify_grid(image, app.state.model, app.state.device, app.state.transform)
+    overlay = build_overlay(image, boxes, preds, EUROSAT_CLASSES, confidences=confidences)
 
     counts = Counter(EUROSAT_CLASSES[p] for p in preds)
     total = len(preds)
@@ -81,6 +81,7 @@ def classify(request: ClassifyRequest):
         tile_counts=tile_counts,
         tile_percentages=tile_percentages,
         tile_labels=[EUROSAT_CLASSES[p] for p in preds],
+        tile_confidences=confidences,
         scene_datetime=scene_meta["scene_datetime"],
         cloud_cover_pct=scene_meta["cloud_cover_pct"],
         bbox=request.bbox,

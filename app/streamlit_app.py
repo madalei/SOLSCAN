@@ -181,7 +181,7 @@ if "classify_result" in st.session_state:
         for col in range(n_cols)
     ]
     preds = [classes.index(label) for label in data["tile_labels"]]
-    overlay = build_overlay(original, boxes, preds, classes, only_classes=only_classes)
+    overlay = build_overlay(original, boxes, preds, classes, only_classes=only_classes, confidences=data["tile_confidences"])
 
     col1, col2 = st.columns(2)
     col1.image(original, caption="Image Sentinel-2", use_container_width=True)
