@@ -31,8 +31,19 @@ def evaluate_classifier(model, test_loader, device, classes, verbose: bool = Tru
     return all_preds, all_labels
 
 
-def draw_confusion_matrix(all_labels, all_preds, classes):
+def draw_confusion_matrix(all_labels, all_preds, classes, title=None):
     _, ax = plt.subplots(figsize=(8, 8))
-    ConfusionMatrixDisplay.from_predictions(all_labels, all_preds, display_labels=classes, xticks_rotation="vertical", ax=ax)
+
+    ConfusionMatrixDisplay.from_predictions(
+        all_labels,
+        all_preds,
+        display_labels=classes,
+        xticks_rotation="vertical",
+        ax=ax
+    )
+
+    if title is not None:
+        ax.set_title(title)
+
     plt.tight_layout()
     plt.show()
