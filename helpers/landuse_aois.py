@@ -35,4 +35,17 @@ LANDUSE_AOIS: list[LanduseAOI] = [
     LanduseAOI("bethune", _town_bbox(50.5297, 2.6389), "62"),
     LanduseAOI("calais", _town_bbox(50.9513, 1.8587), "62"),
     LanduseAOI("boulogne_sur_mer", _town_bbox(50.7264, 1.6147), "62"),
+    # Extension listed in docs/roadmap_segmentation.md §6 as "à évaluer ensuite" for more
+    # tiles/diversity -- both port/industrial zones, outside the Nord-Pas-de-Calais cluster
+    # so the model sees more than one region's visual signature.
+    LanduseAOI("le_havre", _town_bbox(49.4944, 0.1079), "76"),
+    LanduseAOI("fos_sur_mer", _town_bbox(43.4333, 4.9500), "13"),
+    # A few more Nord/Pas-de-Calais towns to densify the existing cluster without leaving
+    # its MGRS-safe scale.
+    LanduseAOI("maubeuge", _town_bbox(50.2775, 3.9714), "59"),
+    LanduseAOI("saint_omer", _town_bbox(50.7500, 2.2600), "62"),
+    LanduseAOI("arras", _town_bbox(50.2910, 2.7770), "62"),
+    # Haute-Savoie: cross-border industrial/commercial zone near Geneva, alpine-valley
+    # terrain -- visually very different from the flat northern-France AOIs above.
+    LanduseAOI("annemasse", _town_bbox(46.1933, 6.2350), "74"),
 ]
