@@ -38,8 +38,12 @@ LANDUSE_AOIS: list[LanduseAOI] = [
     # Extension listed in docs/roadmap_segmentation.md §6 as "à évaluer ensuite" for more
     # tiles/diversity -- both port/industrial zones, outside the Nord-Pas-de-Calais cluster
     # so the model sees more than one region's visual signature.
-    LanduseAOI("le_havre", _town_bbox(49.4944, 0.1079), "76"),
-    LanduseAOI("fos_sur_mer", _town_bbox(43.4333, 4.9500), "13"),
+    # NB: Le Havre and Fos-sur-Mer (the towns actually named in the roadmap) sit on a
+    # Sentinel-2/MGRS tile boundary -- the windowed read gets silently clipped to a sliver
+    # (confirmed empirically: 185x2306px and 2480x60px instead of ~2250x2280). Rouen and
+    # Istres are the nearest same-theme substitutes that land fully inside one tile.
+    LanduseAOI("rouen", _town_bbox(49.4432, 1.0993), "76"),
+    LanduseAOI("istres", _town_bbox(43.5178, 4.9866), "13"),
     # A few more Nord/Pas-de-Calais towns to densify the existing cluster without leaving
     # its MGRS-safe scale.
     LanduseAOI("maubeuge", _town_bbox(50.2775, 3.9714), "59"),
