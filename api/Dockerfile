@@ -17,6 +17,9 @@ COPY helpers/ helpers/
 COPY models/ models/
 COPY checkpoints/resnet18_eurosat.pth checkpoints/resnet18_eurosat.pth
 COPY checkpoints/resnet18_eurosat_label_smoothing.pth checkpoints/resnet18_eurosat_label_smoothing.pth
+# NB: fails the build until this exists -- train it first (notebooks/fetch_landuse_dataset.ipynb
+# then notebooks/train_unet_landuse.ipynb). Added ahead of time on request.
+COPY checkpoints/unet_landuse.pth checkpoints/unet_landuse.pth
 COPY api/ api/
 RUN uv sync --frozen --no-dev
 

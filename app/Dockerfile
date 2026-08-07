@@ -2,6 +2,10 @@
 FROM python:3.13-slim
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /usr/local/bin/
 
+# helpers.mask_rasterize imports rasterio (for the U-Net landuse classes/colors), which
+# needs libexpat at runtime -- same requirement as api/Dockerfile, for the same reason.
+RUN apt-get update && apt-get install -y --no-install-recommends libexpat1 && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PATH="/app/.venv/bin:$PATH"
 
