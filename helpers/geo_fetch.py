@@ -1,12 +1,23 @@
 """Fetch OSM (parking/industrial) and Cartofriches (friches) polygons for an AOI.
 
 No API key needed for either source. See docs/roadmap_segmentation.md for the gotchas
-this module works around (Overpass User-Agent, Cartofriches BBOX param).
+this module works around (Overpass User-Agent, Cartofriches BBOX param). Both are free,
+shared public instances and occasionally answer with a 502/504 under load -- callers get
+retried automatically (mirror rotation for Overpass, backoff for Cartofriches) rather than
+failing the whole AOI on a transient hiccup.
 """
+
+import time
 
 import requests
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Mirrors of the same public Overpass instance -- overpass-api.de alone times out often
+# enough (504) that rotating through alternates on retry meaningfully improves success rate.
+OVERPASS_URLS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
+]
 CARTOFRICHES_URL = "https://www.geo2france.fr/geoserver/cerema/ows"
 # Overpass 406s on requests' default User-Agent -- needs something explicit.
 HEADERS = {"User-Agent": "SOLSCAN/0.1 (educational project, RNCP38616)"}
@@ -20,7 +31,28 @@ def _close_ring(points: list[tuple[float, float]]) -> Ring:
     return points
 
 
-def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 90) -> dict[str, list[Ring]]:
+def _request_with_retries(method: str, urls: list[str], *, retry_delay_s: float = 5, **kwargs) -> requests.Response:
+    """Try each URL in turn (same request each time), pausing between attempts.
+
+    Raises the last exception if every URL failed -- callers (the fetch AOI loop) already
+    catch and skip on failure, so this only needs to make a single AOI's fetch as likely to
+    succeed as possible, not guarantee it.
+    """
+    last_exc: Exception | None = None
+    for attempt, url in enumerate(urls):
+        try:
+            resp = requests.request(method, url, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            if attempt < len(urls) - 1:
+                print(f"  ({url} failed: {exc} -- retrying in {retry_delay_s:.0f}s)")
+                time.sleep(retry_delay_s)
+    raise last_exc
+
+
+def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 120) -> dict[str, list[Ring]]:
     """Fetch parking and industrial/commercial way polygons from OSM (Overpass API).
 
     @param bbox: min_lon, min_lat, max_lon, max_lat (WGS84).
@@ -40,8 +72,11 @@ def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 9
     );
     out geom;
     """
-    resp = requests.post(OVERPASS_URL, data={"data": query}, headers=HEADERS, timeout=timeout)
-    resp.raise_for_status()
+    # Client timeout gets extra margin over the server-side [timeout:] budget above, so we're
+    # never the ones cutting off a query the server would've otherwise finished.
+    resp = _request_with_retries(
+        "POST", OVERPASS_URLS, data={"data": query}, headers=HEADERS, timeout=timeout + 30
+    )
     elements = resp.json().get("elements", [])
 
     polygons: dict[str, list[Ring]] = {"parking": [], "industrial": []}
@@ -87,9 +122,15 @@ def fetch_cartofriches_polygons(dept_insee_prefix: str, bbox: tuple[float, float
         "typeName": "cerema:cartofriche",
         "outputFormat": "application/json",
         "CQL_FILTER": f"site_id LIKE '{dept_insee_prefix}%'",
+        # Without this the server answers in Lambert-93 (EPSG:2154), which silently breaks
+        # _bbox_intersects below (it compares raw coords against a WGS84 bbox) -- every
+        # friche then fails the intersection check and gets dropped, with no error raised.
+        "srsName": "EPSG:4326",
     }
-    resp = requests.get(CARTOFRICHES_URL, params=params, headers=HEADERS, timeout=timeout)
-    resp.raise_for_status()
+    # No known mirror for this one (single GeoServer instance) -- just retry the same URL.
+    resp = _request_with_retries(
+        "GET", [CARTOFRICHES_URL] * 3, params=params, headers=HEADERS, timeout=timeout
+    )
     features = resp.json().get("features", [])
 
     rings: list[Ring] = []
