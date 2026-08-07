@@ -5,10 +5,12 @@ from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
 def evaluate_classifier(model, test_loader, device, classes, verbose: bool = True):
     """
-        output:
-        all_preds  = [4, 4, 7, 2, 9, 4, 0, ...]   # classes predites
-        all_labels = [4, 7, 7, 2, 9, 4, 0, ...]   # vraies classes 
-
+        @param model: The neural network model to evaluate
+        @param test_loader: DataLoader for the test set
+        @param device: The device to which the model will be moved
+        @param classes: List of class names
+        @param verbose: Whether to print the classification report
+        @return: Tuple of predicted labels and true labels (all_preds=[2, 7, 4, ...], all_labels=[4, 7, 7, ...])
     """
     model.eval()                                    # mode évaluation
     all_preds, all_labels = [], []
@@ -32,6 +34,13 @@ def evaluate_classifier(model, test_loader, device, classes, verbose: bool = Tru
 
 
 def draw_confusion_matrix(all_labels, all_preds, classes, title=None):
+    """
+        Draw a confusion matrix using sklearn's ConfusionMatrixDisplay
+        @param all_labels: list of true labels
+        @param all_preds: list of predicted labels
+        @param classes: list of class names
+        @param title: optional title for the plot
+    """
     _, ax = plt.subplots(figsize=(8, 8))
 
     ConfusionMatrixDisplay.from_predictions(
