@@ -7,10 +7,12 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import folium
+import numpy as np
 import requests
 import streamlit as st
 from branca.element import MacroElement, Template
-from folium.plugins import Draw
+from folium.plugins import Draw, MousePosition
+from folium.raster_layers import ImageOverlay
 from PIL import Image
 from streamlit_folium import st_folium
 
@@ -22,8 +24,12 @@ API_BASE_URL = os.environ.get("SOLSCAN_API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="SOLSCAN - Classification EuroSAT", layout="wide")
 st.title("SOLSCAN - v1.0 - Classification de zone (EuroSAT / Sentinel-2)")
+st.markdown(
+    "**SOLSCAN** est un outil d'aide à la prospection photovoltaïque : il analyse des images satellite Sentinel-2 pour repérer automatiquement des zones industrielles susceptibles d'accueillir des projets solaires "
+    "SOLSCAN est basé sur un modèle de classification d'images entraîné par transfert learning sur le dataset EuroSAT (10 classes de couverture terrestre)."
+)
 st.caption(
-    "Tracer un rectangle sur la carte pour sélectionner une zone. "
+    "Tracer un rectangle sur la carte pour sélectionner une zone puis cliquer sur 'Classifier'. "
     "L'API récupère la scène Sentinel-2 correspondante, découpe en tuiles 64x64 et classifie chaque tuile."
 )
 
@@ -42,7 +48,7 @@ except requests.RequestException:
     st.stop()
 
 
-st.sidebar.header("Paramètres - see if we need this section")
+st.sidebar.header("Paramètres")
 
 class _ClearPreviousDrawing(MacroElement):
     """Wipe any earlier drawn shape as soon as a new one is completed.
@@ -87,6 +93,7 @@ draw.add_to(m)
 # Only one rectangle should be visible at a time: as soon as a new one is completed,
 # clear whatever was drawn before it instead of letting old selections pile up.
 _ClearPreviousDrawing(draw.get_name()).add_to(m)
+MousePosition(position="bottomleft", separator=" | ", prefix="Coordonnées :", num_digits=5).add_to(m)
 
 map_data = st_folium(m, key="map", width=900, height=500)
 
@@ -207,3 +214,23 @@ if "classify_result" in st.session_state:
         for c in legend_classes
     ]
     st.dataframe(table, use_container_width=True, hide_index=True)
+
+    st.subheader("Zones classifiées sur la carte")
+    st.caption(
+        "L'overlay est géoréférencé sur ses coordonnées réelles. L'image est recadrée à un "
+        "nombre entier de tuiles côté API, donc ses bords peuvent différer de quelques "
+        "dizaines de mètres du rectangle dessiné plus haut."
+    )
+    min_lon, min_lat, max_lon, max_lat = data["bbox"]
+    result_map = folium.Map(location=[(min_lat + max_lat) / 2, (min_lon + max_lon) / 2], zoom_start=15)
+    folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(result_map)
+    folium.TileLayer("Esri.WorldImagery", name="Satellite (Esri)", attr="Esri").add_to(result_map)
+    ImageOverlay(
+        image=np.array(overlay),
+        bounds=[[min_lat, min_lon], [max_lat, max_lon]],
+        opacity=0.8,
+        name="Classification",
+    ).add_to(result_map)
+    folium.LayerControl(collapsed=False).add_to(result_map)
+    MousePosition(position="bottomleft", separator=" | ", prefix="Coordonnées :", num_digits=5).add_to(result_map)
+    st_folium(result_map, key="result_map", width=900, height=500, returned_objects=[])
