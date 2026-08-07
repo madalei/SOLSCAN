@@ -78,6 +78,10 @@ class SegEngine:
         iou_per_class = torch.where(union > 0, intersection.float() / union, torch.full_like(union, float("nan")))
         return total_loss / total, iou_per_class.cpu()
 
+    # Note: Pas d'accuracy actuellement dans SegEngine, 
+    # vu le déséquilibre extrême déjà documenté (fond = large majorité des pixels), 
+    # l'accuracy pixel serait trompeuse ici — un modèle qui prédit "fond partout" obtiendrait ~99% d'accuracy 
+    # tout en étant inutile (0% sur parking/friche)
     def train_model(self, model, train_loader, val_loader, epochs: int, class_names: list[str] | None = None) -> dict:
         history = {"train_loss": [], "val_loss": [], "val_iou_per_class": [], "val_mean_iou": []}
         names = class_names or [f"class_{i}" for i in range(self.num_classes)]
