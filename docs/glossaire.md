@@ -39,3 +39,6 @@ Utilisée principalement dans les réseaux de neurones de classification multi-c
 
 **Train loss**:
 Valeur de la fonction de perte (loss function) calculée sur les données d'entraînement. C'est l'indicateur que le modèle essaie de minimiser pendant l'apprentissage.
+
+**IoU** 
+Intersection over Union, aussi appelé indice de Jaccard mesure le recouvrement entre la zone prédite par le modèle et la zone réelle (vérité terrain), pour une classe donnée
