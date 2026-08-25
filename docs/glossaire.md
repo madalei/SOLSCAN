@@ -34,11 +34,17 @@ Measure How many predicted positives are correct - Best when false positives are
 **Recall**:
 Measure How many actual positives are found - Best when False negatives are costly
 
+**resnet34**:
+l'architecture de l'encodeur (la partie du U-Net qui compresse l'image en descendant, avant la partie décodeur qui remonte vers le masque de segmentation). C'est littéralement un réseau ResNet-34 (34 couches, avec ses connexions résiduelles) utilisé comme squelette. On aurait pu choisir resnet50, efficientnet-b0, mobilenet_v2… — ça change le nombre de paramètres, la taille du champ réceptif, la vitesse.
+
 **Softmax**:
 Utilisée principalement dans les réseaux de neurones de classification multi-classes. Son rôle est de transformer un vecteur de scores bruts (appelés logits) en probabilités qui somment à 1.
 
 **Train loss**:
 Valeur de la fonction de perte (loss function) calculée sur les données d'entraînement. C'est l'indicateur que le modèle essaie de minimiser pendant l'apprentissage.
+
+**Transformer**:
+Architecture basée sur le mécanisme d'attention (*self-attention*), sans convolution ni récurrence. L'image est découpée en patches traités comme une séquence de tokens ; chaque patch calcule directement sa relation avec tous les autres, ce qui capte du contexte global dès la première couche — contrairement à un CNN (ex. U-Net) qui ne construit ce contexte que progressivement, couche après couche. Contrepartie : moins de biais inductif (pas d'hypothèse de localité intégrée), donc généralement plus de données et de calcul nécessaires pour bien apprendre. Ex. dans le projet : SegFormer, Mask2Former.
 
 **IoU** 
 Intersection over Union, aussi appelé indice de Jaccard mesure le recouvrement entre la zone prédite par le modèle et la zone réelle (vérité terrain), pour une classe donnée

@@ -2,6 +2,14 @@
 aligned with a Sentinel-2 scene. See docs/roadmap_segmentation.md §1 and §3.
 
 Class IDs: 0=fond, 1=parking, 2=industriel/commercial, 3=friche.
+
+Transforme des polygones géographiques (OpenStreetMap + Cartofriches) en un masque
+raster multi-classe aligné pixel à pixel sur une scène Sentinel-2 -- c'est ce fichier
+qui calcule la vérité-terrain (les masques) utilisée pour entraîner le U-Net.
+
+Classes : 0=fond, 1=parking, 2=industriel/commercial, 3=friche. En cas de chevauchement
+de polygones, friche est prioritaire (un site industriel devenu friche doit être classé
+friche), cf. docs/roadmap_segmentation.md.
 """
 
 import numpy as np

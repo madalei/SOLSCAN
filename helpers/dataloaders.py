@@ -1,3 +1,7 @@
+"""
+    EuroSAT loading/preprocessing + a generic train/val/test DataLoader splitter.
+"""
+
 import torch
 from torch.utils.data import DataLoader, random_split
 from pathlib import Path
