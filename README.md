@@ -1,3 +1,73 @@
+## SOLSCAN — résumé de l'application
+
+**SOLSCAN** est un outil d'aide à la prospection photovoltaïque : il analyse des images satellite Sentinel-2 pour repérer automatiquement des zones déjà artificialisées (friches, sites industriels, grands parkings) susceptibles d'accueillir des projets solaires — plutôt que d'artificialiser de nouveaux terrains.
+
+### Pipeline actuel
+
+1. **Frontend Streamlit** (`app/streamlit_app.py`) — carte satellite interactive, on dessine un rectangle (zone d'intérêt), l'app appelle l'API.
+2. **API FastAPI** (`api/main.py`) — récupère la scène Sentinel-2 correspondante (via Microsoft Planetary Computer), découpe en tuiles, classifie, renvoie une image overlay colorée + statistiques par classe.
+3. **Modèle** — un ResNet18 fine-tuné sur EuroSAT (10 classes de type d'occupation des sols, dont "Industrial") sert de preuve de pipeline : classification tuile entière (64px), pas de vraies frontières pixel.
+
+### En cours (branche `unet`)
+
+Une vraie segmentation multi-classe (fond/parking/industriel/friche) via U-Net, entraînée sur des masques dérivés d'OpenStreetMap + Cartofriches, pour obtenir des frontières pixel précises et une estimation de surface fiable — l'objectif final du projet
+
+### Contexte
+
+Projet réalisé dans le cadre d'une certification RNCP (data science / deep learning) — d'où les notebooks de comparaison de modèles/losses/stratégies d'entraînement, qui documentent la démarche autant qu'ils produisent un résultat.
+
+
+### Arborescence du projet
+
+```
+SOLSCAN/
+├── api/                          # Backend FastAPI
+│   ├── main.py                   # Endpoints /classify (EuroSAT) et /v2/classify (U-Net)
+│   ├── inference.py               # Fetch Sentinel-2, classification par tuile (EuroSAT), overlay
+│   ├── segmentation_inference.py  # Segmentation par tuile (U-Net), overlay du masque
+│   └── schemas.py                 # Modèles Pydantic des requêtes/réponses de l'API
+├── app/                          # Frontend Streamlit
+│   ├── streamlit_app.py          # Point d'entrée, sélecteur de modèle (EuroSAT / U-Net)
+│   ├── eurosat_page.py            # Vue carte + résultats pour le classifieur EuroSAT
+│   ├── unet_page.py                # Vue carte + résultats pour le U-Net
+│   └── map_widgets.py              # Utilitaires carte communs aux deux vues
+├── models/                       # Constructeurs de modèles (architecture + poids pré-entraînés)
+│   ├── resnet18_classifier_builder.py
+│   ├── efficientnet_b0_classifier_builder.py
+│   └── unet_builder.py            # U-Net (segmentation_models_pytorch), encodeur ResNet34
+├── training/                     # Boucles d'entraînement et d'évaluation
+│   ├── engine.py                  # Boucle générique (classification EuroSAT)
+│   ├── seg_engine.py               # SegEngine : loss Dice + CE pondérée, IoU par classe (U-Net)
+│   ├── evaluate.py                 # Rapport de classification, matrice de confusion
+│   └── pipeline_configs.py         # Config des expériences (RESNET18_BASELINE, UNET_CONFIG)
+├── helpers/                      # Fonctions utilitaires partagées
+│   ├── dataloaders.py             # Chargement EuroSAT + split train/val/test générique
+│   ├── segmentation_dataset.py     # Dataset PyTorch pour les tuiles landuse (image + masque)
+│   ├── geo_fetch.py                 # Requêtes OpenStreetMap (Overpass) + Cartofriches (WFS)
+│   ├── mask_rasterize.py            # Polygones géo -> masque raster multi-classe
+│   ├── landuse_aois.py               # Zones géographiques utilisées pour bâtir le dataset U-Net
+│   ├── image_utils.py                 # Recadrage/découpe d'images en tuiles
+│   └── palette.py                      # Couleurs par classe pour les overlays
+├── notebooks/                    # Exploration, entraînement, benchmark (documentent la démarche)
+│   ├── fetch_eurosat.ipynb
+│   ├── train_eurosat_classifier.ipynb  # Comparaison de 4 variantes ResNet18 / EfficientNet-B0
+│   ├── tile_grid_classification.ipynb
+│   ├── fetch_landuse_dataset.ipynb     # Génère le dataset d'entraînement du U-Net
+│   └── train_unet_landuse.ipynb        # Entraîne le U-Net, suit l'IoU par classe
+├── data/                          # Données (générées ou téléchargées, volumineuses)
+│   ├── eurosat/                    # Dataset EuroSAT (27 000 tuiles, 10 classes)
+│   ├── landuse/                     # Tuiles Sentinel-2 + masques générés (images/masks/masks_preview)
+│   └── samples/                      # Image d'exemple pour tests manuels
+├── checkpoints/                   # Poids des modèles entraînés (.pth), committés pour le déploiement
+├── docs/
+│   ├── glossaire.md                 # Définitions des concepts ML/géo utilisés dans le projet
+│   ├── roadmap_segmentation.md       # Historique/diagnostic du premier essai U-Net
+│   └── soutenance/                    # Livret d'apprentissage RNCP
+├── docker-compose.yml              # Orchestration des 2 services (api, app)
+├── main.py                         # Stub non utilisé (généré par `uv init`)
+└── pyproject.toml / uv.lock        # Dépendances du projet, gérées avec uv
+```
+
 ### Installation -- How I installed, for memo
 
 #### Create a new project (generates pyproject.toml, .venv, etc.)
@@ -40,7 +110,7 @@ git clone <repo-url>
 cd SOLSCAN
 docker compose up -d --build
 ```
-The model checkpoint (`checkpoints/resnet18_eurosat.pth`) is committed to git (deliberately overrides the usual `*.pth` gitignore rule) specifically so a plain clone is enough -- nothing else to transfer to the server.
+The model checkpoint (`checkpoints/resnet18_eurosat.pth`) must be committed to git 
 
 #### Verify
 ```
@@ -55,3 +125,8 @@ Then open `http://<server>:8501` in a browser for the Streamlit app. Make sure p
 
 #### Known limitation
 Both images currently install the full project dependency set rather than being split per-service, so each is ~4.3GB (fine on most small VPS with 20GB+ disk, but not lean). Ask if this needs slimming down.
+
+
+## TODO
+
+- reorganiser le readme -> que doit il contenir exactement? commandes d'installation du projet en mode dev local / en mode docker pour etre executé sur un serveur / comment faire tourner les note book ?
