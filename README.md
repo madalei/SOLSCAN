@@ -19,7 +19,7 @@ Checkout the branch ou want to explore (unet recommanded) <br>
 Start with Docker <br>
 `docker compose up -d --build`
 
-Or start manually
+Or start manually with `uv`
 ```
 uv run python -m uvicorn api.main:app --reload --port 8000
 uv run streamlit run app/streamlit_app.py
@@ -96,36 +96,40 @@ SOLSCAN/
 └── pyproject.toml / uv.lock        # Dépendances du projet, gérées avec uv
 ```
 
+## Developpement mode 
+
 ### Installation -- How I installed, for memo
 
-#### Create a new project (generates pyproject.toml, .venv, etc.)
+The project use uv as dependency manager and project helper
+
+Create a new project (generates pyproject.toml, .venv, etc.) <br>
 `uv init`
 
-#### Add dependencies (writes to pyproject.toml + uv.lock, installs into .venv)
+Add dependencies (writes to pyproject.toml + uv.lock, installs into .venv) <br>
 `uv add pandas numpy scikit-learn`
 
 
-#### Add a dev-only dependency
+Add a dev-only dependency <br>
 `uv add --dev pytest`
 
-#### Run something inside the project's venv without manually activating it
+Run something inside the project's venv without manually activating it <br>
 `uv run python main.py`
 `uv run pytest`
 
-#### Sync the venv to match the lockfile exactly (e.g. after cloning the repo)
+Sync the venv to match the lockfile exactly (e.g. after cloning the repo) <br>
 `uv sync`
 
 
-#### Run a Notebook
+### Run a Notebook
 
 `uv run jupyter notebook notebooks/fetch_eurosat.ipynb`
 
-#### Run API and front app
+### Run API and front app
 
 `uv run python -m uvicorn api.main:app --reload --port 8000`
 `uv run streamlit run app/streamlit_app.py`
 
-#### Run in Debug mode in VS code
+### Run in Debug mode in VS code
 
 Launch configs are edited in `.vscode/launch.json`
 
@@ -137,22 +141,23 @@ Streamlit: app/streamlit_app.py — lance l'app Streamlit in debug mode
 
 Python: Current File — debug n'importe quel script Python ouvert 
 
-### Deploy on a server (Docker)
+## Deploy on a server with Docker
 
 Two services (`api`: FastAPI + model, `app`: Streamlit), orchestrated via `docker-compose.yml`. CPU-only torch (see `[tool.uv.sources]` in `pyproject.toml`) -- no GPU needed or used.
 
 #### Prerequisites on the server
 - Docker + the Compose plugin installed (`docker compose version` to check).
 
-#### Get the code and build
+#### Checkout code, build and run
 ```
-git clone <repo-url>
+git clone https://github.com/madalei/SOLSCAN.git
 cd SOLSCAN
+git checkout <branch>
 docker compose up -d --build
 ```
 The model checkpoint (`checkpoints/resnet18_eurosat.pth`) must be committed to git 
 
-#### Verify
+### Ping and check you get no error
 ```
 curl http://<server>:8000/classes
 ```
@@ -165,8 +170,3 @@ Then open `http://<server>:8501` in a browser for the Streamlit app. Make sure p
 
 #### Known limitation
 Both images currently install the full project dependency set rather than being split per-service, so each is ~4.3GB (fine on most small VPS with 20GB+ disk, but not lean). Ask if this needs slimming down.
-
-
-## TODO
-
-- reorganiser le readme -> que doit il contenir exactement? commandes d'installation du projet en mode dev local / en mode docker pour etre executé sur un serveur / comment faire tourner les note book ?
