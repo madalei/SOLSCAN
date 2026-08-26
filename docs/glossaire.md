@@ -40,6 +40,9 @@ l'architecture de l'encodeur (la partie du U-Net qui compresse l'image en descen
 **Softmax**:
 Utilisée principalement dans les réseaux de neurones de classification multi-classes. Son rôle est de transformer un vecteur de scores bruts (appelés logits) en probabilités qui somment à 1.
 
+**Tenseur**:
+Généralisation des vecteurs/matrices à un nombre arbitraire de dimensions — la structure de données de base de PyTorch (`torch.Tensor`), similaire à un `np.ndarray` mais avec en plus le calcul de gradients (autograd) et l'exécution GPU (`cuda`, `mps`). Caractérisé par son rang (nombre de dimensions) et sa shape (taille de chaque dimension). Ex: une tuile transformée est un tenseur `[C, H, W]` (canaux, hauteur, largeur), un batch de N tuiles empilées via `torch.stack` est `[N, C, H, W]`.
+
 **Train loss**:
 Valeur de la fonction de perte (loss function) calculée sur les données d'entraînement. C'est l'indicateur que le modèle essaie de minimiser pendant l'apprentissage.
 

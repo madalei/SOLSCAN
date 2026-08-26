@@ -45,6 +45,7 @@ except requests.RequestException:
 
 st.sidebar.header("Paramètres")
 
+# The AOI selector is a map widget that lets the user draw a rectangle on the map. The bbox is returned as (min_lon, min_lat, max_lon, max_lat).
 bbox = render_aoi_selector(key="eurosat_map", tile_size_px=TILE_SIZE_PX)
 
 classify_clicked = st.sidebar.button("Classifier", disabled=bbox is None)

@@ -86,7 +86,7 @@ def validate_aoi_bbox(bbox: tuple[float, float, float, float], max_tiles: int = 
     if est_tiles > max_tiles:
         raise AOITooLargeError(f"AOI too large: ~{est_tiles} tiles estimated (max {max_tiles}). Draw a smaller rectangle.")
 
-
+# Fetch a Sentinel-2 RGB image for the given AOI and date range, returning the image and some metadata.
 def fetch_sentinel2_rgb(bbox, date_start: str, date_end: str, max_cloud_cover: float) -> tuple[Image.Image, dict]:
     catalog = pystac_client.Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
@@ -148,7 +148,11 @@ def classify_grid(image: Image.Image, model, device, transform, tile_size: int =
             boxes.append(box)
 
     batch = torch.stack(tiles).to(device)
+    # pour chaque tuile du batch, calcule la classe la plus probable et son score de confiance, 
+    # sans overhead de gradients
     with torch.no_grad():
+        # model(batch) fait un forward pass sur un batch d'images et retourne des logits bruts
+        # torch.softmax convertit ces logits en probabilités
         probs = torch.softmax(model(batch), dim=1)
         confidences, preds = probs.max(dim=1)
 
