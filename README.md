@@ -1,18 +1,46 @@
-## SOLSCAN — résumé de l'application
+# SOLSCAN — Application de télédetection 
 
 **SOLSCAN** est un outil d'aide à la prospection photovoltaïque : il analyse des images satellite Sentinel-2 pour repérer automatiquement des zones déjà artificialisées (friches, sites industriels, grands parkings) susceptibles d'accueillir des projets solaires — plutôt que d'artificialiser de nouveaux terrains.
+Le moteur de classification (ou segmentation selon la version) utilise un modele de Deep Learning.
 
-### Pipeline actuel
+## Quick start
+
+**Require Docker installed**
+
+Clone the Repo <br>
+`git clone https://github.com/madalei/SOLSCAN.git`
+
+Open folder <br>
+`cd SOLSCAN`
+
+Checkout the branch ou want to explore (unet recommanded) <br>
+`git checkout main` or `git checkout unet`
+
+Start with Docker <br>
+`docker compose up -d --build`
+
+Or start manually
+```
+uv run python -m uvicorn api.main:app --reload --port 8000
+uv run streamlit run app/streamlit_app.py
+```
+
+
+## Stack actuelle
 
 1. **Frontend Streamlit** (`app/streamlit_app.py`) — carte satellite interactive, on dessine un rectangle (zone d'intérêt), l'app appelle l'API.
 2. **API FastAPI** (`api/main.py`) — récupère la scène Sentinel-2 correspondante (via Microsoft Planetary Computer), découpe en tuiles, classifie, renvoie une image overlay colorée + statistiques par classe.
 3. **Modèle** — un ResNet18 fine-tuné sur EuroSAT (10 classes de type d'occupation des sols, dont "Industrial") sert de preuve de pipeline : classification tuile entière (64px), pas de vraies frontières pixel.
 
-### En cours (branche `unet`)
+## Branche `main`
 
-Une vraie segmentation multi-classe (fond/parking/industriel/friche) via U-Net, entraînée sur des masques dérivés d'OpenStreetMap + Cartofriches, pour obtenir des frontières pixel précises et une estimation de surface fiable — l'objectif final du projet
+Développement initial. Utilise un modele de Deep learning basé sur ResNet18 et fine-tuné sur les classes Eurosat. Cette version aboutit a une classification des zones par carrés de 640m de coté.
 
-### Contexte
+## Branche `unet` (en cours)
+
+Segmentation multi-classe (fond/parking/industriel/friche) via U-Net, entraînée sur des masques dérivés d'OpenStreetMap + Cartofriches, pour obtenir des frontières pixel précises et une estimation de surface fiable — l'objectif final du projet
+
+## Contexte
 
 Projet réalisé dans le cadre d'une certification RNCP (data science / deep learning) — d'où les notebooks de comparaison de modèles/losses/stratégies d'entraînement, qui documentent la démarche autant qu'ils produisent un résultat.
 
@@ -96,6 +124,18 @@ SOLSCAN/
 
 `uv run python -m uvicorn api.main:app --reload --port 8000`
 `uv run streamlit run app/streamlit_app.py`
+
+#### Run in Debug mode in VS code
+
+Launch configs are edited in `.vscode/launch.json`
+
+Open Run & Debug (⇧⌘D), you see configs
+
+FastAPI: api.main — lance uvicorn api.main:app --reload in debug mode
+
+Streamlit: app/streamlit_app.py — lance l'app Streamlit in debug mode
+
+Python: Current File — debug n'importe quel script Python ouvert 
 
 ### Deploy on a server (Docker)
 
