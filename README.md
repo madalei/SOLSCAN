@@ -1,6 +1,6 @@
 # SOLSCAN — Application de télédetection 
 
-**SOLSCAN** est un outil d'aide à la prospection photovoltaïque : il analyse des images satellite Sentinel-2 pour repérer automatiquement des zones déjà artificialisées (friches, sites industriels, grands parkings) susceptibles d'accueillir des projets solaires — plutôt que d'artificialiser de nouveaux terrains.
+**SOLSCAN** est un outil d'aide à la prospection photovoltaïque : il analyse des images satellite Sentinel-2 pour repérer automatiquement des zones déjà artificialisées (friches, sites industriels, grands parkings) susceptibles d'accueillir des projets solaires.
 Le moteur de classification (ou segmentation selon la version) utilise un modele de Deep Learning.
 
 ## Quick start
