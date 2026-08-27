@@ -18,3 +18,26 @@ Parce que ce sont deux tâches différentes : ResNet18/EuroSAT fait de la classi
 Oui, sans problème — build_unet(num_classes, device, encoder_name="resnet34") a un paramètre encoder_name, et segmentation_models_pytorch supporte "resnet18" comme n'importe quel autre backbone. Le choix de ResNet34 plutôt que ResNet18 est indépendant du choix fait pour EuroSAT — c'est un compromis propre au U-Net, documenté dans le docstring de models/unet_builder.py:10 : "resnet34, a good accuracy/speed tradeoff" (un peu plus profond que ResNet18, donc plus de capacité, tout en restant raisonnable en coût de calcul).
 
 Et pour être précis : le ResNet18 fine-tuné sur EuroSAT et le ResNet34 encodeur du U-Net sont deux réseaux entraînés séparément, sur des tâches et des données différentes, sauvegardés dans deux checkpoints distincts (resnet18_eurosat_label_smoothing.pth vs unet_landuse.pth) — aucun poids n'est partagé entre les deux.
+
+## Principe de fonctionement de l'entrainement -> comment le model apprend?
+
+### Segmentation (branche unet) 
+Sur cette branche, le masque de vérité terrain n'est pas dessiné à la main. Il est généré automatiquement à partir de bases géographiques existantes, dans helpers/mask_rasterize.py (sur la branche unet) :
+
+- On récupère des polygones géographiques déjà connus : parkings et zones industrielles via OpenStreetMap (Overpass API), friches via Cartofriches.
+
+- On "brûle" (rasterize) ces polygones sur une grille de pixels alignée sur la tuile Sentinel-2 : chaque pixel reçoit l'ID de classe du polygone qui le contient (0=fond, 1=parking, 2=industriel, 3=friche).
+
+Donc **la vérité terrain vient de données publiques déjà cartographiées**, pas d'annotation manuelle. C'est le "Option 1 / fine-tuning" évoqué dans ton CLAUDE.md, version pragmatique : au lieu d'annoter à la main dans QGIS, on réutilise des polygones qui existent déjà.
+
+Le résultat : pour chaque image xxx.png dans data/landuse/images/, il existe un xxx.png correspondant dans data/landuse/masks/ — même dimensions, mais chaque pixel contient un entier (0-3) au lieu d'une couleur RGB.
+
+### Comment le U-Net apprend à partir de ça
+helpers/segmentation_dataset.py charge chaque paire (image, masque). Le U-Net (models/unet_builder.py) prend l'image en entrée et sort, pour chaque pixel, un score par classe (4 classes) — donc une sortie de forme (H, W, 4) au lieu d'une seule étiquette.
+
+L'entraînement (training/seg_engine.py) compare pixel par pixel la prédiction du modèle au masque de vérité terrain, avec une loss (Dice + CrossEntropy). Le modèle ne "comprend" rien : la backprop ajuste les filtres convolutifs pour que les motifs visuels (couleur, texture, forme des toits, teinte du bitume vs terre nue...) qui co-occurrent statistiquement avec "industriel" dans les milliers d'exemples finissent par produire un score élevé sur la classe industrielle. C'est de la corrélation apprise sur des exemples étiquetés, pas de la reconnaissance sémantique.
+
+Petit plus : l'encodeur est pré-entraîné sur ImageNet (encoder_weights="imagenet"), donc il ne part pas de zéro — il a déjà des filtres qui détectent bords/textures/formes génériques, et l'entraînement sur tes masques ne fait qu'adapter ces filtres au vocabulaire visuel du satellite.
+
+#### Un piège réel que le projet a rencontré
+Le fond (classe 0) domine massivement les pixels — parking et friche sont rares. Sans correction, le modèle apprend à prédire "fond partout" et obtient quand même ~99% de pixels corrects tout en étant inutile. C'est documenté dans docs/roadmap_segmentation.md et corrigé via compute_class_pixel_weights (pondération inverse de fréquence dans la loss) et le suivi de l'IoU par classe plutôt que l'accuracy globale, justement pour détecter ce problème.
