@@ -24,6 +24,7 @@ Or start manually with `uv`
 uv run python -m uvicorn api.main:app --reload --port 8000
 uv run streamlit run app/streamlit_app.py
 ```
+Then open a browser and find your running app at `http://localhost:8501/`
 
 
 ## Stack actuelle
