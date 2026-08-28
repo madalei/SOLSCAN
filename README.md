@@ -32,6 +32,12 @@ Then open a browser and find your running app at `http://localhost:8501/`
 2. **API FastAPI** (`api/main.py`) — récupère la scène Sentinel-2 correspondante (via Microsoft Planetary Computer), découpe en tuiles, classifie, renvoie une image overlay colorée + statistiques par classe.
 3. **Modèle** — un ResNet18 fine-tuné sur EuroSAT (10 classes de type d'occupation des sols, dont "Industrial") sert de preuve de pipeline : classification tuile entière (64px), pas de vraies frontières pixel.
 
+
+### Représentation schématique de l'architecture
+
+![Alt "shema archi"](./docs/schema-architecture-globale.png)
+![Alt "shema pipeline"](./docs/schema-pipeline-deeplearning.png)
+
 ## Branche `main`
 
 Développement initial. Utilise un modele de Deep learning basé sur ResNet18 et fine-tuné sur les classes Eurosat. Cette version aboutit a une classification des zones par carrés de 640m de coté.
@@ -44,10 +50,6 @@ Segmentation multi-classe (fond/parking/industriel/friche) via U-Net, entraîné
 
 Projet réalisé dans le cadre d'une certification RNCP (data science / deep learning) — d'où les notebooks de comparaison de modèles/losses/stratégies d'entraînement, qui documentent la démarche autant qu'ils produisent un résultat.
 
-## Big picture
-
-![Alt "shema archi"](./docs/schema-architecture-globale.png)
-![Alt "shema archi"](./docs/schema-pipeline-deeplearning.png)
 
 ## Arborescence du projet
 
