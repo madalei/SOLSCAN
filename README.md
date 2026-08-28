@@ -45,8 +45,12 @@ Segmentation multi-classe (fond/parking/industriel/friche) via U-Net, entraîné
 
 Projet réalisé dans le cadre d'une certification RNCP (data science / deep learning) — d'où les notebooks de comparaison de modèles/losses/stratégies d'entraînement, qui documentent la démarche autant qu'ils produisent un résultat.
 
+## Big picture
 
-### Arborescence du projet
+![Alt "shema archi"](./docs/schema-architecture-globale.png)
+![Alt "shema archi"](./docs/schema-pipeline-deeplearning.png)
+
+## Arborescence du projet
 
 ```
 SOLSCAN/
