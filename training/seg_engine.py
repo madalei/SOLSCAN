@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from segmentation_models_pytorch.losses import DiceLoss
 from torch import nn
@@ -19,6 +21,15 @@ class SegEngine:
         self.num_classes = num_classes
         self.dice_loss = DiceLoss(mode="multiclass", from_logits=True)
         self.ce_loss = nn.CrossEntropyLoss(weight=class_weights.to(device) if class_weights is not None else None)
+
+        # Populated by train_model -- the val-loss-minimizing epoch's weights, since with a
+        # dataset this small the model keeps overfitting well past that point (train loss
+        # keeps falling while val loss climbs back up), so the *last* epoch is usually not
+        # the one worth deploying. See docs/roadmap_segmentation.md and the val loss curve
+        # in notebooks/train_unet_landuse.ipynb section 5/6 for the observed pattern.
+        self.best_val_loss = float("inf")
+        self.best_epoch: int | None = None
+        self.best_state_dict: dict | None = None
 
     def display_info(self):
         print(f"device: {self.device}, num_classes: {self.num_classes}, ce weight: {self.ce_loss.weight}, optimizer: {self.optimizer}")
@@ -91,6 +102,11 @@ class SegEngine:
             val_loss, val_iou = self.eval_epoch(model, val_loader)
             mean_iou = float(torch.nanmean(val_iou))
 
+            if val_loss < self.best_val_loss:
+                self.best_val_loss = val_loss
+                self.best_epoch = epoch
+                self.best_state_dict = copy.deepcopy(model.state_dict())
+
             history["train_loss"].append(train_loss)
             history["val_loss"].append(val_loss)
             history["val_iou_per_class"].append(val_iou.tolist())
@@ -102,4 +118,5 @@ class SegEngine:
                 f"Mean IoU: {mean_iou:.4f} ({iou_str})"
             )
 
+        print(f"Best epoch: {self.best_epoch}/{epochs} (val loss {self.best_val_loss:.4f}) -- see self.best_state_dict")
         return history
