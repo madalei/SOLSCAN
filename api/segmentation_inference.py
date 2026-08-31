@@ -15,7 +15,8 @@ from PIL import Image
 
 from api.inference import AOISizeError, AOITooLargeError, AOITooSmallError
 from helpers.image_utils import crop_to_multiple
-from helpers.mask_rasterize import CLASS_NAMES, colorize_mask
+from helpers.mask_postprocess import filter_small_regions
+from helpers.mask_rasterize import CLASS_NAMES, CLASS_PARKING, MIN_PARKING_AREA_M2, colorize_mask
 from models.unet_builder import build_unet
 
 UNET_CHECKPOINT_PATH = Path(__file__).resolve().parent.parent / "checkpoints" / "unet_landuse.pth"
@@ -91,6 +92,11 @@ def segment_grid(image: Image.Image, model, device, transform, tile_size: int = 
     full_mask = np.zeros((image.height, image.width), dtype=np.uint8)
     for (x0, y0, x1, y1), tile_pred in zip(boxes, preds):
         full_mask[y0:y1, x0:x1] = tile_pred
+
+    # The model was trained to recognize parking-looking surfaces of any size (see
+    # helpers/mask_rasterize.py) -- restrict to the business-relevant (loi APER) ones only
+    # here, on the prediction, rather than at training time (docs/roadmap_segmentation.md §8).
+    full_mask = filter_small_regions(full_mask, CLASS_PARKING, SENTINEL2_GSD_M, MIN_PARKING_AREA_M2)
 
     return image, full_mask, n_rows, n_cols
 
