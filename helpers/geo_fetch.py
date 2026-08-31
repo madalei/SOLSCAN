@@ -4,13 +4,16 @@ Récupère les polygones géographiques qui servent de masques d'entraînement, 
 Fetch OSM (parking/industrial) and Cartofriches (friches) polygons for an AOI.
 
 No API key needed for either source. See docs/roadmap_segmentation.md for the gotchas
-this module works around (Overpass User-Agent, Cartofriches BBOX param). Both are free,
-shared public instances and occasionally answer with a 502/504 under load -- callers get
-retried automatically (mirror rotation for Overpass, backoff for Cartofriches) rather than
+this module works around (Overpass User-Agent, Cartofriches's former WFS being
+Hauts-de-France-only). Overpass is a free, shared public instance and occasionally answers
+with a 502/504 under load -- callers get retried automatically (mirror rotation) rather than
 failing the whole AOI on a transient hiccup.
 """
 
+import sqlite3
+import struct
 import time
+from pathlib import Path
 
 import requests
 
@@ -21,7 +24,6 @@ OVERPASS_URLS = [
     "https://overpass.kumi.systems/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
 ]
-CARTOFRICHES_URL = "https://www.geo2france.fr/geoserver/cerema/ows"
 # Overpass 406s on requests' default User-Agent -- needs something explicit.
 HEADERS = {"User-Agent": "SOLSCAN/0.1 (educational project, RNCP38616)"}
 
@@ -163,51 +165,106 @@ def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 1
     return polygons
 
 
-def _bbox_intersects(ring: Ring, bbox: tuple[float, float, float, float]) -> bool:
-    min_lon, min_lat, max_lon, max_lat = bbox
-    lons = [p[0] for p in ring]
-    lats = [p[1] for p in ring]
-    return max(lons) >= min_lon and min(lons) <= max_lon and max(lats) >= min_lat and min(lats) <= max_lat
+# National Cartofriches extract (GeoPackage, ~67MB, ~36k sites), from data.gouv.fr's
+# "Sites référencés dans Cartofriches" dataset. Replaces a per-AOI live WFS query against
+# https://www.geo2france.fr: that GeoServer turned out to only mirror Hauts-de-France data
+# (confirmed empirically -- querying it for departments 13/33/31/77 always returned 0
+# features, even for genuinely friche-dense areas like Bouches-du-Rhone or Gironde) despite
+# Cartofriches itself being a national Cerema dataset. This extract actually has that
+# coverage (687 sites in dept 13, 311 in 33, 206 in 31, 150 in 77, checked directly) -- see
+# docs/roadmap_segmentation.md.
+CARTOFRICHES_GPKG_URL = "https://www.data.gouv.fr/api/1/datasets/r/a9084493-e742-4a2f-890b-0ebc803098df"
+CARTOFRICHES_GPKG_PATH = Path(__file__).resolve().parent.parent / "data" / "cartofriches" / "cartofriches_national.gpkg"
 
 
-def fetch_cartofriches_polygons(dept_insee_prefix: str, bbox: tuple[float, float, float, float], timeout: int = 90) -> list[Ring]:
-    """Fetch friche (brownfield) polygons for a whole department, then keep only those
-    whose bbox intersects the AOI (client-side filter -- the WFS BBOX param is unreliable
-    on this GeoServer, see docs/roadmap_segmentation.md).
-
-    @param dept_insee_prefix: e.g. "59" (Nord), "62" (Pas-de-Calais) -- filters Cartofriches'
-    `site_id` field, which is prefixed by the INSEE commune code.
+def _ensure_cartofriches_gpkg(path: Path = CARTOFRICHES_GPKG_PATH, timeout: int = 300) -> Path:
+    """Download the national Cartofriches GeoPackage once and cache it at `path` (under
+    `data/`, gitignored). Downloaded straight to a `.part` file and renamed on success, so a
+    crash mid-download can't leave a corrupt file that looks cached on the next run.
     """
-    params = {
-        "service": "WFS",
-        "version": "2.0.0",
-        "request": "GetFeature",
-        "typeName": "cerema:cartofriche",
-        "outputFormat": "application/json",
-        "CQL_FILTER": f"site_id LIKE '{dept_insee_prefix}%'",
-        # Without this the server answers in Lambert-93 (EPSG:2154), which silently breaks
-        # _bbox_intersects below (it compares raw coords against a WGS84 bbox) -- every
-        # friche then fails the intersection check and gets dropped, with no error raised.
-        "srsName": "EPSG:4326",
-    }
-    # No known mirror for this one (single GeoServer instance) -- just retry the same URL.
-    resp = _request_with_retries(
-        "GET", [CARTOFRICHES_URL] * 3, params=params, headers=HEADERS, timeout=timeout
-    )
-    features = resp.json().get("features", [])
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Downloading national Cartofriches dataset (~67MB, one-time) to {path}...")
+    tmp_path = path.with_suffix(".gpkg.part")
+    with requests.get(CARTOFRICHES_GPKG_URL, headers=HEADERS, timeout=timeout, stream=True) as resp:
+        resp.raise_for_status()
+        with open(tmp_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                f.write(chunk)
+    tmp_path.rename(path)
+    return path
+
+
+def _parse_gpkg_polygon(blob: bytes) -> list[Ring]:
+    """Parse a GeoPackage geometry blob (GPB header + WKB Polygon/MultiPolygon, 2D only)
+    into a list of exterior rings. Interior rings (holes) are dropped -- same simplification
+    already made for the OSM-sourced polygons in this module; no shapely/geopandas
+    dependency in this project (see docs/roadmap_segmentation.md).
+    """
+    flags = blob[3]
+    envelope_ind = (flags >> 1) & 0x07
+    env_len = {0: 0, 1: 32, 2: 48, 3: 48, 4: 64}[envelope_ind]
+    wkb = blob[8 + env_len:]  # 4 bytes (magic+version+flags) + 4 bytes (srs_id) + envelope
+
+    def read_rings(buf: bytes, offset: int, endian: str) -> tuple[list[Ring], int]:
+        (num_rings,) = struct.unpack_from(endian + "I", buf, offset)
+        offset += 4
+        rings = []
+        for _ in range(num_rings):
+            (num_pts,) = struct.unpack_from(endian + "I", buf, offset)
+            offset += 4
+            coords = struct.unpack_from(endian + f"{num_pts * 2}d", buf, offset)
+            offset += 16 * num_pts
+            rings.append(list(zip(coords[0::2], coords[1::2])))
+        return rings, offset
+
+    endian = "<" if wkb[0] == 1 else ">"
+    (geom_type,) = struct.unpack_from(endian + "I", wkb, 1)
+    offset = 5
+    exterior_rings: list[Ring] = []
+    if geom_type == 3:  # Polygon
+        rings, offset = read_rings(wkb, offset, endian)
+        if rings:
+            exterior_rings.append(rings[0])
+    elif geom_type == 6:  # MultiPolygon -- each member is itself a full WKB Polygon (own byte-order+type header)
+        (num_polys,) = struct.unpack_from(endian + "I", wkb, offset)
+        offset += 4
+        for _ in range(num_polys):
+            sub_endian = "<" if wkb[offset] == 1 else ">"
+            offset += 5
+            rings, offset = read_rings(wkb, offset, sub_endian)
+            if rings:
+                exterior_rings.append(rings[0])
+    return exterior_rings
+
+
+def fetch_cartofriches_polygons(bbox: tuple[float, float, float, float]) -> list[Ring]:
+    """Fetch friche (brownfield) polygons intersecting an AOI from the national Cartofriches
+    extract, downloaded once and cached locally (see `_ensure_cartofriches_gpkg`).
+
+    @param bbox: min_lon, min_lat, max_lon, max_lat (WGS84) -- queried directly against the
+    GeoPackage's spatial (R-tree) index. No department/INSEE prefix needed: that was a
+    workaround specific to the old WFS's unreliable BBOX param, not needed against a local
+    file (see docs/roadmap_segmentation.md).
+    """
+    gpkg_path = _ensure_cartofriches_gpkg()
+    min_lon, min_lat, max_lon, max_lat = bbox
+
+    con = sqlite3.connect(gpkg_path)
+    try:
+        rows = con.execute(
+            """
+            SELECT f.geom FROM friches_surfaces f
+            JOIN rtree_friches_surfaces_geom r ON f.fid = r.id
+            WHERE r.minx <= ? AND r.maxx >= ? AND r.miny <= ? AND r.maxy >= ?
+            """,
+            (max_lon, min_lon, max_lat, min_lat),
+        ).fetchall()
+    finally:
+        con.close()
 
     rings: list[Ring] = []
-    for feature in features:
-        geom = feature.get("geometry") or {}
-        gtype = geom.get("type")
-        coords = geom.get("coordinates")
-        if not coords:
-            continue
-
-        candidate_rings = [coords[0]] if gtype == "Polygon" else [poly[0] for poly in coords] if gtype == "MultiPolygon" else []
-        for raw_ring in candidate_rings:
-            ring = _close_ring([(pt[0], pt[1]) for pt in raw_ring])
-            if _bbox_intersects(ring, bbox):
-                rings.append(ring)
-
+    for (blob,) in rows:
+        rings.extend(_close_ring(ring) for ring in _parse_gpkg_polygon(blob))
     return rings

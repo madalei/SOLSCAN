@@ -8,13 +8,10 @@ class LanduseAOI:
     @param name: short label used as a filename prefix for tiles generated from this AOI
     (avoids collisions between AOIs, see docs/roadmap_segmentation.md §6).
     @param bbox: min_lon, min_lat, max_lon, max_lat (WGS84).
-    @param dept_insee_prefix: INSEE department code prefix used to filter Cartofriches'
-    `site_id` field via CQL (its WFS BBOX param is unreliable, see docs/roadmap_segmentation.md).
     """
 
     name: str
     bbox: tuple[float, float, float, float]
-    dept_insee_prefix: str
 
 
 def _town_bbox(lat: float, lon: float, half_lon_deg: float = 0.15, half_lat_deg: float = 0.10) -> tuple[float, float, float, float]:
@@ -28,13 +25,13 @@ def _town_bbox(lat: float, lon: float, half_lon_deg: float = 0.15, half_lat_deg:
 # Town-center coordinates are approximate; adjust freely, the fetch pipeline only needs a
 # reasonable bbox per AOI, not survey-grade precision.
 LANDUSE_AOIS: list[LanduseAOI] = [
-    LanduseAOI("dunkerque", _town_bbox(51.0343, 2.3768), "59"),
-    LanduseAOI("lens", _town_bbox(50.4322, 2.8329), "62"),
-    LanduseAOI("douai", _town_bbox(50.3697, 3.0797), "59"),
-    LanduseAOI("valenciennes", _town_bbox(50.3574, 3.5233), "59"),
-    LanduseAOI("bethune", _town_bbox(50.5297, 2.6389), "62"),
-    LanduseAOI("calais", _town_bbox(50.9513, 1.8587), "62"),
-    LanduseAOI("boulogne_sur_mer", _town_bbox(50.7264, 1.6147), "62"),
+    LanduseAOI("dunkerque", _town_bbox(51.0343, 2.3768)),
+    LanduseAOI("lens", _town_bbox(50.4322, 2.8329)),
+    LanduseAOI("douai", _town_bbox(50.3697, 3.0797)),
+    LanduseAOI("valenciennes", _town_bbox(50.3574, 3.5233)),
+    LanduseAOI("bethune", _town_bbox(50.5297, 2.6389)),
+    LanduseAOI("calais", _town_bbox(50.9513, 1.8587)),
+    LanduseAOI("boulogne_sur_mer", _town_bbox(50.7264, 1.6147)),
     # Extension listed in docs/roadmap_segmentation.md §6 as "à évaluer ensuite" for more
     # tiles/diversity -- both port/industrial zones, outside the Nord-Pas-de-Calais cluster
     # so the model sees more than one region's visual signature.
@@ -42,16 +39,16 @@ LANDUSE_AOIS: list[LanduseAOI] = [
     # Sentinel-2/MGRS tile boundary -- the windowed read gets silently clipped to a sliver
     # (confirmed empirically: 185x2306px and 2480x60px instead of ~2250x2280). Rouen and
     # Istres are the nearest same-theme substitutes that land fully inside one tile.
-    LanduseAOI("rouen", _town_bbox(49.4432, 1.0993), "76"),
-    LanduseAOI("istres", _town_bbox(43.5178, 4.9866), "13"),
+    LanduseAOI("rouen", _town_bbox(49.4432, 1.0993)),
+    LanduseAOI("istres", _town_bbox(43.5178, 4.9866)),
     # A few more Nord/Pas-de-Calais towns to densify the existing cluster without leaving
     # its MGRS-safe scale.
-    LanduseAOI("maubeuge", _town_bbox(50.2775, 3.9714), "59"),
-    LanduseAOI("saint_omer", _town_bbox(50.7500, 2.2600), "62"),
-    LanduseAOI("arras", _town_bbox(50.2910, 2.7770), "62"),
+    LanduseAOI("maubeuge", _town_bbox(50.2775, 3.9714)),
+    LanduseAOI("saint_omer", _town_bbox(50.7500, 2.2600)),
+    LanduseAOI("arras", _town_bbox(50.2910, 2.7770)),
     # Haute-Savoie: cross-border industrial/commercial zone near Geneva, alpine-valley
     # terrain -- visually very different from the flat northern-France AOIs above.
-    LanduseAOI("annemasse", _town_bbox(46.1933, 6.2350), "74"),
+    LanduseAOI("annemasse", _town_bbox(46.1933, 6.2350)),
     # Targeted at the Parking class specifically -- it's the rarest class by far (~0.2% of
     # pixels dataset-wide) and stayed near-0 IoU even after class weighting, data
     # augmentation and multi-AOI generalization fixes (see docs/roadmap_segmentation.md and
@@ -61,15 +58,9 @@ LANDUSE_AOIS: list[LanduseAOI] = [
     # across regions/departments not yet covered for added visual diversity.
     #
     # Caveat: OSM sometimes maps a mall's parking as a multipolygon *relation* (ring with
-    # islands for landscaping/lighting) rather than a plain *way* -- fetch_osm_polygons only
-    # reads ways (docs/roadmap_segmentation.md's known limitation, still true), so a share of
-    # exactly the biggest parkings these AOIs are chosen for may still be missed. Worth
-    # checking the fetch notebook's per-AOI parking way count before assuming this alone
-    # fixes the class.
-    
-    # WARRNING les très grands parkings de centres commerciaux sont souvent cartographiés sur OSM comme des relations 
-    # (anneau extérieur + îlots découpés pour les espaces verts/luminaires) plutôt que des way simples. 
-    # Ça veut dire qu'une partie — potentiellement les plus gros — des parkings de ces nouvelles AOI pourrait quand même être ratée.
+    # islands for landscaping/lighting) rather than a plain *way* -- fetch_osm_polygons
+    # handles this for parking now (see helpers/geo_fetch.py), but a boundary fragmented
+    # across several "outer" member ways is still an approximation (no shapely dependency).
     #
     # NB: an earlier version of this list had lille_englos (50.6386, 2.9634), marseille
     # Plan-de-Campagne (43.4167, 5.3167), velizy (48.7833, 2.1917) and bordeaux_lac
@@ -81,8 +72,8 @@ LANDUSE_AOIS: list[LanduseAOI] = [
     # and douai/lens above already cover that tile's usable portion -- so it was dropped.
     # The other three were replaced below with the nearest verified-clean equivalent
     # (ratio of actual-to-nominal read pixels ~1.0, checked directly, not assumed).
-    LanduseAOI("vitrolles", _town_bbox(43.4581, 5.2483), "13"),  # retail zone next to Plan-de-Campagne, different MGRS tile
-    LanduseAOI("val_europe", _town_bbox(48.8720, 2.7850), "77"),  # Disneyland Paris / Val d'Europe -- one of the largest parking areas in the Paris region
-    LanduseAOI("bordeaux_merignac", _town_bbox(44.8407, -0.6478), "33"),  # Merignac retail zone, next to Bordeaux airport
-    LanduseAOI("toulouse_labege", _town_bbox(43.5464, 1.5145), "31"),  # Labege retail/technopole zone
+    LanduseAOI("vitrolles", _town_bbox(43.4581, 5.2483)),  # retail zone next to Plan-de-Campagne, different MGRS tile
+    LanduseAOI("val_europe", _town_bbox(48.8720, 2.7850)),  # Disneyland Paris / Val d'Europe -- one of the largest parking areas in the Paris region
+    LanduseAOI("bordeaux_merignac", _town_bbox(44.8407, -0.6478)),  # Merignac retail zone, next to Bordeaux airport
+    LanduseAOI("toulouse_labege", _town_bbox(43.5464, 1.5145)),  # Labege retail/technopole zone
 ]
