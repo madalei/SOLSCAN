@@ -1,6 +1,6 @@
 # Feuille de route : segmentation multi-classe des zones artificialisées (U-Net)
 
-Statut : implémentation abandonnée (step back) après un premier essai concluant sur le plan technique mais insuffisant sur le plan des résultats. Ce document capitalise ce qui a été appris pour une reprise future. Aucun code associé n'est présent dans le repo actuellement (retiré volontairement).
+Statut : **repris et fonctionnel** (branche `unet`). Le premier essai (§5) avait été abandonné (step back) faute de résultats exploitables ; un second essai (§8) a corrigé les causes identifiées alors (pondération de classe, volume/diversité du dataset, epochs) et en a découvert de nouvelles, propres à la classe Parking et à la couverture géographique de Cartofriches -- voir §8 pour le diagnostic détaillé et la conclusion actuelle sur cette classe.
 
 ## 1. Objectif
 
@@ -12,8 +12,9 @@ Remplacer la segmentation binaire ("artificialisé" vs "non-artificialisé", bas
 | 1 | Parking (surface moyenne/grande) | Cible directe : loi APER (2023) impose des ombrières solaires sur les grands parkings |
 | 2 | Industriel / commercial | Toitures/friches potentielles |
 | 3 | Friche | Cible prioritaire : sites déjà délaissés, mobilisables sans destruction d'usage actif |
+| 4 | Residentiel | Ajoutée au second essai (§8) -- initialement hors périmètre (ligne ci-dessous), son absence faisait retomber tout pixel résidentiel par défaut sur Fond, sans classe correcte où le router ; le modèle le confondait avec Parking/Friche (ambigu à 10m/pixel) |
 
-Le résidentiel individuel est explicitement hors périmètre. En cas de chevauchement de polygones, **friche est prioritaire** (un site industriel devenu friche doit être étiqueté friche).
+En cas de chevauchement de polygones, **friche est prioritaire** (un site industriel devenu friche doit être étiqueté friche), puis parking/industriel, résidentiel en dernier (priorité la plus basse) -- voir `helpers/mask_rasterize.py`.
 
 ## 2. Sources de données validées
 
@@ -23,7 +24,7 @@ Aucune de ces sources ne nécessite de compte/clé API — accessibles en HTTP s
 - Endpoint : `https://overpass-api.de/api/interpreter`
 - Tags utilisés : `amenity=parking` (classe 1) ; `building=industrial|warehouse`, `landuse=industrial|commercial` (classe 2)
 - **Piège technique** : le serveur renvoie `HTTP 406` si le header `User-Agent` par défaut de la librairie `requests` est utilisé — il faut un `User-Agent` explicite (ex. `"MonProjet/1.0 (contact)"`).
-- Limite assumée : seuls les `way` (polygones simples) sont exploitables facilement ; les `relation` (multipolygones, ex. parkings avec îlots) sont plus complexes à reconstruire (gestion anneaux extérieurs/intérieurs) — non traités dans le premier essai.
+- Les `relation` de type `multipolygon` **sont gérées depuis le second essai**, mais parking uniquement (`helpers/geo_fetch.fetch_osm_polygons`) : un premier essai les activait aussi pour industriel/résidentiel, ce qui a fait timeout tous les miroirs Overpass sur des AOI qui marchaient très bien en way-only -- une relation `landuse=residential` peut couvrir tout un quartier avec des centaines de ways membres, rendant `out geom;` beaucoup trop coûteux à résoudre côté serveur. Les anneaux intérieurs (`role=inner`, îlots de végétation/luminaires) sont repeints en Fond plutôt que laissés dans la classe extérieure. Simplification assumée (pas de shapely) : chaque way `outer` est traité comme un anneau fermé indépendant -- correct si le contour est un seul way, approximatif s'il est fragmenté en plusieurs.
 - Filtre de surface minimale nécessaire côté parking (ex. ~1500 m², proxy du seuil loi APER) pour exclure les petites places résidentielles — se calcule facilement avec une formule de shoelace une fois les polygones reprojetés en CRS métrique, pas besoin de shapely.
 
 ### Cartofriches (Cerema, WFS)
@@ -31,6 +32,7 @@ Aucune de ces sources ne nécessite de compte/clé API — accessibles en HTTP s
 - Format : GeoJSON (`OUTPUTFORMAT=application/json`), champs utiles : `site_id` (préfixé par le code INSEE de la commune), `site_nom`, `site_type` (souvent `"inconnu"` — sans importance, seule la présence compte)
 - **Piège technique** : le paramètre `BBOX` du WFS est peu fiable sur ce GeoServer (souci d'ordre d'axes lat/lon vs lon/lat). Solution robuste : filtrer par département via `CQL_FILTER=site_id LIKE '<préfixe_INSEE>%'`, récupérer tout le département (léger, ~1400 friches pour le Nord), puis filtrer côté client par intersection de bounding box avec l'AOI.
 - Couverture confirmée : 5557 friches en Hauts-de-France, 1401 dans le Nord (59), 42 dans une AOI élargie autour de Dunkerque.
+- **Couverture hors Hauts-de-France incertaine, probablement faible** : constaté au second essai (§8) -- les 4 AOI ajoutées hors 59/62 pour cibler Parking (Bouches-du-Rhône 13, Gironde 33, Haute-Garonne 31, Seine-et-Marne 77) remontent toutes `0 friche(s)`, alors que ce sont des zones urbaines/industrielles denses où il devrait statistiquement y en avoir. À vérifier avant d'ajouter d'autres AOI hors Hauts-de-France en comptant sur Cartofriches pour la classe Friche.
 
 ### Choix technique : pas de dépendance géo lourde
 `rasterio.warp.transform_geom` (reprojection) + `rasterio.features.rasterize` (rasterisation multi-classe, avec priorité par ordre d'empilement des formes) suffisent. Pas besoin de `shapely`/`geopandas`/`pyproj`/`osmnx` — cohérent avec l'empreinte de dépendances existante du projet (déjà `rasterio`-only). Seul ajout nécessaire : `requests` (déjà présent en transitif via `pystac-client`, à passer en dépendance directe si repris).
@@ -73,31 +75,54 @@ Essai réalisé sur une AOI de ~475 km² autour de Dunkerque (66 tuiles génér�
 
 Point de vérification confirmé par script (pas juste supposé) : les classes rares sont bien présentes dans les 3 splits (train/val/test), donc ce n'est pas un problème de fuite de split — c'est un problème de signal/poids dans la loss et de volume de données.
 
-## 6. Prochaines étapes (priorisées)
+## 6. Prochaines étapes (priorisées) -- état après le second essai (§8)
 
 ### Doit être fait avant toute reprise sérieuse
-1. **Pondérer la loss par classe** (`CrossEntropyLoss(weight=...)`, poids inversement proportionnels à la fréquence des classes) — levier le plus direct, ne nécessite pas plus de données, change juste `training/seg_engine.py`.
-2. **Étendre le dataset à plusieurs AOI distinctes** (pas juste agrandir l'AOI actuelle — risque de sortir des limites d'une seule scène Sentinel-2/tuile MGRS ~110×110km). Zones candidates identifiées :
-   - **Bassin minier du Nord-Pas-de-Calais** (Lens, Douai, Valenciennes, Béthune — départements 59 et 62) : zone la plus dense en friches de France (anciens sites miniers), cible directement la classe la plus rare.
-   - **Calais / Boulogne-sur-Mer** (62) : port/industriel, diversifie parking et industriel.
-   - Extension possible à d'autres régions (Le Havre, Marseille/Fos-sur-Mer...) si besoin de plus de diversité — nécessite de généraliser `FRICHE_DEPT_PREFIX` à une liste de départements plutôt qu'un seul.
-   - Objectif indicatif : viser 1000+ tuiles pour avoir une masse critique sur les classes rares (actuellement 66).
-   - Prévoir un préfixe de nom de tuile par AOI (`{aoi_label}_tile_{row}_{col}.png`) pour éviter les collisions entre zones.
+1. ~~**Pondérer la loss par classe**~~ -- fait (`helpers/segmentation_dataset.compute_class_pixel_weights` + `training/seg_engine.SegEngine`).
+2. ~~**Étendre le dataset à plusieurs AOI distinctes**~~ -- fait, 17 AOI (`helpers/landuse_aois.py`), 1097+ tuiles. Voir §8 pour le détail et une limite découverte (Cartofriches hors Hauts-de-France).
 
 ### À évaluer ensuite
-3. Gérer les `relation` OSM (multipolygones) actuellement ignorées.
-4. Stratifier le split train/val/test par présence de classe rare plutôt qu'un `random_split` uniforme (actuellement pas un problème identifié, mais à surveiller si le dataset grossit de façon hétérogène entre AOI).
-5. Envisager du sur-échantillonnage (oversampling) des tuiles contenant les classes rares, en complément de la pondération de la loss.
-6. Réévaluer le nombre d'epochs une fois la loss pondérée et le dataset élargi (15 était clairement insuffisant pour ce niveau de difficulté).
-7. Exporter une version colorée des masks (`data/.../masks_preview/`) pour l'inspection visuelle hors notebook (QGIS, Finder) — utile pour la validation qualité du dataset généré.
+3. ~~Gérer les `relation` OSM (multipolygones)~~ -- fait pour Parking uniquement (voir §2, §8) ; industriel/résidentiel laissés en way-only (coût Overpass prohibitif constaté empiriquement).
+4. Stratifier le split train/val/test par présence de classe rare plutôt qu'un `random_split` uniforme -- toujours pas fait ; `helpers/dataloaders.build_group_kfold_dataloaders` (groupé par AOI) existe comme alternative pour une estimation de généralisation plus honnête, mais ne résout pas spécifiquement la stratification par classe rare.
+5. Envisager du sur-échantillonnage (oversampling) des tuiles contenant les classes rares -- **non fait**, seul levier de ce type encore non essayé sur Parking (voir §8, piste possible mais rendement incertain vu le plafond structurel constaté).
+6. ~~Réévaluer le nombre d'epochs~~ -- fait, early stopping sur `val_mean_iou` (`training/seg_engine.SegEngine.train_model`, param `patience`) plutôt qu'un nombre fixe.
+7. ~~Exporter une version colorée des masks~~ -- fait (`data/landuse/masks_preview/`, généré par `notebooks/fetch_landuse_dataset.ipynb`).
 
-## 7. Fichiers de référence (supprimés, à recréer si repris)
+## 7. Fichiers de référence (état à l'abandon du premier essai, pour mémoire)
 
-Pour mémoire, la structure qui avait été mise en place et validée fonctionnellement (avant retrait) :
+Pour mémoire, la structure qui avait été mise en place et validée fonctionnellement avant le retrait qui a suivi le premier essai (§5) -- **tous ces fichiers existent de nouveau et sont à jour dans le repo actuel**, voir §8 pour l'état courant :
 - `notebooks/fetch_landuse_dataset.ipynb` — fetch + rasterisation + tuilage
 - `notebooks/train_unet_landuse.ipynb` — entraînement + visualisation + IoU par classe
 - `helpers/segmentation_dataset.py` — `SegmentationTileDataset`, transforms image/mask
 - `models/unet_builder.py` — `build_unet(num_classes, device)` (générique, réutilisable tel quel)
 - `training/seg_engine.py` — `SegEngine` (loss Dice+CE, IoU par classe, boucle train/eval générique)
-- `training/pipeline_configs.py` — entrée `UNET_CONFIG` (à réintroduire, `num_classes=4`)
+- `training/pipeline_configs.py` — entrée `UNET_CONFIG` (`num_classes=5` désormais, residentiel ajoutée)
 - Données générées : `data/landuse/{images,masks}`, checkpoint `checkpoints/unet_landuse.pth`
+
+## 8. Second essai (repris) -- ce qui a été ajouté, et le plafond constaté sur Parking
+
+Le second essai a corrigé, dans l'ordre, les causes identifiées au §5 (pondération de classe, volume/diversité du dataset, epochs), puis exploré des leviers supplémentaires spécifiquement pour la classe Parking (restée quasi à 0 malgré tout le reste). Chronologie des ajouts, chacun mesuré séparément :
+
+1. **Classe Residentiel** (5e classe, §1) -- absente du scope initial, son absence faisait retomber le résidentiel sur Fond par défaut ; le modèle le confondait avec Parking/Friche. A amélioré Friche et Industriel de façon notable au premier run où elle a été ajoutée.
+2. **Pondération de classe** (`compute_class_pixel_weights`, inverse-fréquence) -- fix #1 du §6 original.
+3. **Augmentation de données** (flip horizontal/vertical + rotation 90/180/270°, `helpers/segmentation_dataset.py`) -- appliquée au train uniquement (deux instances du dataset, une `augment=True` une `augment=False`, mêmes indices), val/test restent stables pour des métriques comparables.
+4. **Sélection du meilleur checkpoint par `val_mean_iou`**, pas par `val_loss` minimal (`SegEngine.best_state_dict`) -- constat empirique que les deux ne bougent pas ensemble ici : le val loss est dominé par le volume de pixels de Fond même pondéré, alors qu'une epoch peut avoir un val loss moins bon mais mieux détecter les classes rares.
+5. **`GroupKFold` par AOI** (`helpers/dataloaders.build_group_kfold_dataloaders`) -- alternative au split aléatoire pour une estimation de généralisation plus honnête (les tuiles d'une même ville se ressemblent visuellement), disponible en section 10 du notebook d'entraînement, coûteuse donc utilisée en vérification ponctuelle plutôt qu'en boucle de dev.
+6. **Extension du dataset à 17 AOI, dont 4 choisies spécifiquement pour leur densité de grands parkings** (Vitrolles, Val d'Europe, Bordeaux-Mérignac, Toulouse-Labège -- `helpers/landuse_aois.py`) -- 793 → 1097 tuiles. **Piège rencontré et documenté dans le code** : plusieurs AOI candidates initiales (Lille-Englos, Marseille Plan-de-Campagne, Vélizy, Bordeaux-Lac) débordaient du bord de leur tuile Sentinel-2/MGRS, lisant silencieusement une fraction de l'AOI au lieu de sa totalité (même piège que Le Havre/Fos-sur-Mer au premier essai) -- détecté en comparant la forme de lecture réelle (`rasterio` `.read()`) à la forme nominale de la fenêtre, corrigé en substituant des AOI voisines vérifiées une par une.
+7. **Early stopping sur `val_mean_iou`** (`patience`, `SegEngine.train_model`) plutôt qu'un nombre d'epochs fixe -- nécessaire une fois le dataset plus diversifié : le plafond de 20 epochs qui suffisait sur un dataset homogène (cluster Nord-Pas-de-Calais) devenait insuffisant, le val IoU n'ayant pas fini d'osciller/converger à l'epoch 20 sur un dataset plus hétérogène.
+8. **Relations OSM `multipolygon`** pour Parking uniquement (§2) -- gros parkings mappés avec anneau extérieur + trous (îlots), invisibles pour un fetch way-only. A mesurablement augmenté le volume de pixels Parking (poids de classe 85.6 → 72.0 → 57.3 au fil des ajouts 6+8), les 4 AOI ciblées portant à elles seules ~48% du total des pixels Parking du dataset pour ~26% des tuiles -- la stratégie de ciblage a fonctionné pour produire plus de signal Parking en amont.
+
+### Conclusion sur Parking
+
+**Malgré tous les leviers ci-dessus, l'IoU Parking n'a jamais dépassé ~0.03 sur aucun run, et reste le plus souvent entre 0.005 et 0.02** -- y compris le run avec le plus de pixels Parking jamais atteint (poids de classe le plus bas, 57.3). Ce n'est plus attribuable à l'overfitting, au déséquilibre de classe non corrigé, ou au volume de données : ces trois causes ont été adressées et l'IoU n'a pas bougé de façon significative pour autant.
+
+Diagnostic retenu : **plafond structurel de résolution**, pas un problème de réglage. Un parking de 1500m² (seuil loi APER, le minimum ciblé) ne fait que ~15 pixels à 10m/pixel (Sentinel-2) -- proche du plancher de ce qu'un U-Net avec encodeur ResNet34 (downsampling ×32 au niveau le plus profond) peut apprendre à localiser de façon fiable, quel que soit le volume/la diversité des exemples fournis.
+
+**Recommandation** : ne pas continuer à itérer sur les leviers données/entraînement pour Parking spécifiquement -- rendement décroissant démontré empiriquement. Pistes qui *pourraient* encore aider mais changent significativement le scope, non tentées :
+- Sur-échantillonnage des tuiles à Parking (item 5 du §6) -- rendement incertain, le problème semble être la taille de l'objet plus que sa fréquence d'apparition dans le train set.
+- Une source d'imagerie à résolution plus fine que Sentinel-2 (10m/pixel) -- changerait toute la pipeline de fetch, hors scope de simples ajustements du pipeline actuel.
+- Accepter la limite et concentrer l'évaluation/la présentation du projet sur les 4 autres classes (Fond, Industriel/commercial, Friche, Residentiel), qui répondent bien aux améliorations listées ci-dessus.
+
+### Effet de bord découvert : Friche diluée par les nouvelles AOI
+
+Les 4 AOI ajoutées au point 6 (toutes hors Hauts-de-France) remontent **`0 friche(s)`** de Cartofriches (voir §2) -- probablement un vrai trou de couverture de cette source hors Hauts-de-France, pas un bug. Conséquence : le poids de classe Friche est remonté (27.5 → 33.9) au lieu de continuer à baisser, ces 280 tuiles sans friche diluant sa représentation relative. À surveiller si le dataset s'étend encore hors Hauts-de-France : Friche a besoin d'une autre source de données (ou d'AOI dans des départements où Cartofriches est confirmé riche) pour continuer à s'améliorer en parallèle de Parking/Industriel.
