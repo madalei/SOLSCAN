@@ -1,15 +1,17 @@
 """Turn WGS84 polygon rings (OSM + Cartofriches) into a multi-class raster mask
 aligned with a Sentinel-2 scene. See docs/roadmap_segmentation.md §1 and §3.
 
-Class IDs: 0=fond, 1=parking, 2=industriel/commercial, 3=friche.
+Class IDs: 0=fond, 1=parking, 2=industriel/commercial, 3=friche, 4=residentiel.
 
 Transforme des polygones géographiques (OpenStreetMap + Cartofriches) en un masque
 raster multi-classe aligné pixel à pixel sur une scène Sentinel-2 -- c'est ce fichier
 qui calcule la vérité-terrain (les masques) utilisée pour entraîner le U-Net.
 
-Classes : 0=fond, 1=parking, 2=industriel/commercial, 3=friche. En cas de chevauchement
-de polygones, friche est prioritaire (un site industriel devenu friche doit être classé
-friche), cf. docs/roadmap_segmentation.md.
+Classes : 0=fond, 1=parking, 2=industriel/commercial, 3=friche, 4=residentiel. En cas de
+chevauchement de polygones, residentiel est peint en premier (priorité la plus basse -- un
+parking ou site industriel au sein d'un quartier résidentiel doit rester classé comme tel),
+puis friche est prioritaire sur tout le reste (un site industriel devenu friche doit être
+classé friche), cf. docs/roadmap_segmentation.md.
 """
 
 import numpy as np
@@ -23,13 +25,15 @@ CLASS_BACKGROUND = 0
 CLASS_PARKING = 1
 CLASS_INDUSTRIAL = 2
 CLASS_FRICHE = 3
-CLASS_NAMES = ["Fond", "Parking", "Industriel/commercial", "Friche"]
+CLASS_RESIDENTIAL = 4
+CLASS_NAMES = ["Fond", "Parking", "Industriel/commercial", "Friche", "Residentiel"]
 # For visual inspection only (colorize_mask) -- raw mask files must keep raw class indices.
 CLASS_PREVIEW_COLORS = {
     CLASS_BACKGROUND: (30, 30, 30),
     CLASS_PARKING: (255, 215, 0),
     CLASS_INDUSTRIAL: (255, 99, 71),
     CLASS_FRICHE: (148, 0, 211),
+    CLASS_RESIDENTIAL: (70, 130, 180),
 }
 
 MIN_PARKING_AREA_M2 = 1500  # proxy for the loi APER (2023) large-parking threshold
@@ -58,14 +62,18 @@ def rasterize_landuse_mask(
     osm_parking: list[Ring],
     osm_industrial: list[Ring],
     cartofriches_friches: list[Ring],
+    osm_residential: list[Ring] = (),
     min_parking_area_m2: float = MIN_PARKING_AREA_M2,
 ) -> np.ndarray:
     """Burn all polygons into a single uint8 mask, `scene_shape` = (height, width).
 
-    Painted in priority order (later overwrites earlier on overlap): parking, then
-    industrial/commercial, then friche last -- a reclaimed industrial site must read as
-    friche, per docs/roadmap_segmentation.md §1.
+    Painted in priority order (later overwrites earlier on overlap): residential first
+    (lowest priority -- a parking/industrial site inside a residential landuse polygon must
+    keep its more specific class), then parking, then industrial/commercial, then friche
+    last -- a reclaimed industrial site must read as friche, per
+    docs/roadmap_segmentation.md §1.
     """
+    residential_proj = _reproject_rings(osm_residential, scene_crs)
     parking_proj = _reproject_rings(osm_parking, scene_crs)
     industrial_proj = _reproject_rings(osm_industrial, scene_crs)
     friche_proj = _reproject_rings(cartofriches_friches, scene_crs)
@@ -73,6 +81,8 @@ def rasterize_landuse_mask(
     parking_proj = [ring for ring in parking_proj if _polygon_area_m2(ring) >= min_parking_area_m2]
 
     shapes = []
+    for ring in residential_proj:
+        shapes.append(({"type": "Polygon", "coordinates": [ring]}, CLASS_RESIDENTIAL))
     for ring in parking_proj:
         shapes.append(({"type": "Polygon", "coordinates": [ring]}, CLASS_PARKING))
     for ring in industrial_proj:

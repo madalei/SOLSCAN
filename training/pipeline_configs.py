@@ -42,11 +42,11 @@ RESNET18_BASELINE = PipelineConfig(
     num_classes=10,
 )
 
-# 4 classes: fond, parking, industriel/commercial, friche -- see docs/roadmap_segmentation.md §1
+# 5 classes: fond, parking, industriel/commercial, friche, residentiel -- see docs/roadmap_segmentation.md §1
 UNET_CONFIG = PipelineConfig(
     name="unet_landuse",
     build_model=build_unet,
-    num_classes=4,
+    num_classes=5,
     lr=1e-4,
     epochs=20,
 )

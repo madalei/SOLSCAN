@@ -1,4 +1,7 @@
-"""Fetch OSM (parking/industrial) and Cartofriches (friches) polygons for an AOI.
+"""
+Récupère les polygones géographiques qui servent de masques d'entraînement, depuis deux sources gratuites et sans clé API :
+
+Fetch OSM (parking/industrial) and Cartofriches (friches) polygons for an AOI.
 
 No API key needed for either source. See docs/roadmap_segmentation.md for the gotchas
 this module works around (Overpass User-Agent, Cartofriches BBOX param). Both are free,
@@ -53,11 +56,11 @@ def _request_with_retries(method: str, urls: list[str], *, retry_delay_s: float 
 
 
 def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 120) -> dict[str, list[Ring]]:
-    """Fetch parking and industrial/commercial way polygons from OSM (Overpass API).
+    """Fetch parking, industrial/commercial and residential way polygons from OSM (Overpass API).
 
     @param bbox: min_lon, min_lat, max_lon, max_lat (WGS84).
-    @return {"parking": [...rings...], "industrial": [...rings...]}, each ring a closed
-    list of (lon, lat) points. Only closed ways are usable as polygons -- relations
+    @return {"parking": [...], "industrial": [...], "residential": [...rings...]}, each ring
+    a closed list of (lon, lat) points. Only closed ways are usable as polygons -- relations
     (multipolygons) are skipped (see docs/roadmap_segmentation.md, not handled yet).
     """
     min_lon, min_lat, max_lon, max_lat = bbox
@@ -69,6 +72,7 @@ def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 1
       way["amenity"="parking"]({overpass_bbox});
       way["building"~"^(industrial|warehouse)$"]({overpass_bbox});
       way["landuse"~"^(industrial|commercial)$"]({overpass_bbox});
+      way["landuse"="residential"]({overpass_bbox});
     );
     out geom;
     """
@@ -79,7 +83,7 @@ def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 1
     )
     elements = resp.json().get("elements", [])
 
-    polygons: dict[str, list[Ring]] = {"parking": [], "industrial": []}
+    polygons: dict[str, list[Ring]] = {"parking": [], "industrial": [], "residential": []}
     seen_ids = set()
     for el in elements:
         if el.get("type") != "way" or el["id"] in seen_ids:
@@ -96,6 +100,8 @@ def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 1
             polygons["parking"].append(ring)
         elif tags.get("building") in ("industrial", "warehouse") or tags.get("landuse") in ("industrial", "commercial"):
             polygons["industrial"].append(ring)
+        elif tags.get("landuse") == "residential":
+            polygons["residential"].append(ring)
 
     return polygons
 
