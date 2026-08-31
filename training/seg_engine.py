@@ -22,12 +22,17 @@ class SegEngine:
         self.dice_loss = DiceLoss(mode="multiclass", from_logits=True)
         self.ce_loss = nn.CrossEntropyLoss(weight=class_weights.to(device) if class_weights is not None else None)
 
-        # Populated by train_model -- the val-loss-minimizing epoch's weights, since with a
-        # dataset this small the model keeps overfitting well past that point (train loss
-        # keeps falling while val loss climbs back up), so the *last* epoch is usually not
-        # the one worth deploying. See docs/roadmap_segmentation.md and the val loss curve
-        # in notebooks/train_unet_landuse.ipynb section 5/6 for the observed pattern.
-        self.best_val_loss = float("inf")
+        # Populated by train_model -- the weights from the epoch with the best val mean IoU,
+        # since with a dataset this small the model keeps overfitting well past its best
+        # point (train loss keeps falling after val loss/IoU stop improving), so the *last*
+        # epoch is usually not the one worth deploying. Selecting by mean IoU rather than val
+        # loss on purpose: the two don't track together here -- val loss is dominated by
+        # Fond's pixel volume even under class weighting, while an epoch can have a
+        # noticeably worse (higher) val loss yet a better mean IoU because it detects the
+        # rare classes (Parking/Friche) better. See notebooks/train_unet_landuse.ipynb
+        # section 5/6 for a concrete example of that mismatch.
+        self.best_mean_iou = float("-inf")
+        self.best_val_loss: float | None = None
         self.best_epoch: int | None = None
         self.best_state_dict: dict | None = None
 
@@ -102,7 +107,8 @@ class SegEngine:
             val_loss, val_iou = self.eval_epoch(model, val_loader)
             mean_iou = float(torch.nanmean(val_iou))
 
-            if val_loss < self.best_val_loss:
+            if mean_iou > self.best_mean_iou:
+                self.best_mean_iou = mean_iou
                 self.best_val_loss = val_loss
                 self.best_epoch = epoch
                 self.best_state_dict = copy.deepcopy(model.state_dict())
@@ -118,5 +124,5 @@ class SegEngine:
                 f"Mean IoU: {mean_iou:.4f} ({iou_str})"
             )
 
-        print(f"Best epoch: {self.best_epoch}/{epochs} (val loss {self.best_val_loss:.4f}) -- see self.best_state_dict")
+        print(f"Best epoch: {self.best_epoch}/{epochs} (val mean IoU {self.best_mean_iou:.4f}, val loss {self.best_val_loss:.4f}) -- see self.best_state_dict")
         return history
