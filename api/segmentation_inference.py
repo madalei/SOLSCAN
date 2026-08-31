@@ -93,9 +93,9 @@ def segment_grid(image: Image.Image, model, device, transform, tile_size: int = 
     for (x0, y0, x1, y1), tile_pred in zip(boxes, preds):
         full_mask[y0:y1, x0:x1] = tile_pred
 
-    # The model was trained to recognize parking-looking surfaces of any size (see
-    # helpers/mask_rasterize.py) -- restrict to the business-relevant (loi APER) ones only
-    # here, on the prediction, rather than at training time (docs/roadmap_segmentation.md §8).
+    # Safety net, not the primary filter -- training masks already only label parkings
+    # >=1500m^2 (see helpers/mask_rasterize.py), this just catches the rare spurious small
+    # blob the model predicts anyway (docs/roadmap_segmentation.md §8).
     full_mask = filter_small_regions(full_mask, CLASS_PARKING, SENTINEL2_GSD_M, MIN_PARKING_AREA_M2)
 
     return image, full_mask, n_rows, n_cols
