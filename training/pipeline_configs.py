@@ -43,10 +43,14 @@ RESNET18_BASELINE = PipelineConfig(
 )
 
 # 5 classes: fond, parking, industriel/commercial, friche, residentiel -- see docs/roadmap_segmentation.md §1
+# epochs=60 is an upper bound, not a target -- train_model's early stopping (patience, see
+# notebooks/train_unet_landuse.ipynb) usually halts well before that. Raised from 20 after
+# the AOI list grew more visually diverse (more regions) and 20 epochs stopped being enough
+# for val IoU to settle -- see the run comparison in the notebook's section 5 discussion.
 UNET_CONFIG = PipelineConfig(
     name="unet_landuse",
     build_model=build_unet,
     num_classes=5,
     lr=1e-4,
-    epochs=20,
+    epochs=60,
 )

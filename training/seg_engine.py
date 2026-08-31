@@ -98,9 +98,23 @@ class SegEngine:
     # vu le déséquilibre extrême déjà documenté (fond = large majorité des pixels), 
     # l'accuracy pixel serait trompeuse ici — un modèle qui prédit "fond partout" obtiendrait ~99% d'accuracy 
     # tout en étant inutile (0% sur parking/friche)
-    def train_model(self, model, train_loader, val_loader, epochs: int, class_names: list[str] | None = None) -> dict:
+    def train_model(
+        self, model, train_loader, val_loader, epochs: int, class_names: list[str] | None = None, patience: int | None = None
+    ) -> dict:
+        """
+        @param epochs: upper bound on epochs -- with `patience` set, training usually stops
+        before reaching it.
+        @param patience: stop once `patience` consecutive epochs pass with no new best val
+        mean IoU. None (default) disables early stopping, running the full `epochs`. Needed
+        once the dataset got more diverse (more AOIs): val IoU keeps oscillating without
+        settling within a small fixed epoch budget, so a fixed epoch count either stops too
+        early (still improving) or wastes epochs once it's actually converged -- see the
+        run comparison in notebooks/train_unet_landuse.ipynb. Only the mean-IoU *plateau*
+        triggers a stop, not val loss -- consistent with best_state_dict selection above.
+        """
         history = {"train_loss": [], "val_loss": [], "val_iou_per_class": [], "val_mean_iou": []}
         names = class_names or [f"class_{i}" for i in range(self.num_classes)]
+        epochs_without_improvement = 0
 
         for epoch in range(1, epochs + 1):
             train_loss = self.train_epoch(model, train_loader)
@@ -112,6 +126,9 @@ class SegEngine:
                 self.best_val_loss = val_loss
                 self.best_epoch = epoch
                 self.best_state_dict = copy.deepcopy(model.state_dict())
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
 
             history["train_loss"].append(train_loss)
             history["val_loss"].append(val_loss)
@@ -123,6 +140,10 @@ class SegEngine:
                 f"Epoch {epoch}/{epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - "
                 f"Mean IoU: {mean_iou:.4f} ({iou_str})"
             )
+
+            if patience is not None and epochs_without_improvement >= patience:
+                print(f"Early stopping: no improvement in val mean IoU for {patience} epochs.")
+                break
 
         print(f"Best epoch: {self.best_epoch}/{epochs} (val mean IoU {self.best_mean_iou:.4f}, val loss {self.best_val_loss:.4f}) -- see self.best_state_dict")
         return history

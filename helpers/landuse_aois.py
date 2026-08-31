@@ -59,6 +59,7 @@ LANDUSE_AOIS: list[LanduseAOI] = [
     # parking density -- these are, centered on large retail/shopping zones known for big
     # surface parking lots (the >1500m^2 loi APER threshold this class targets), spread
     # across regions/departments not yet covered for added visual diversity.
+    #
     # Caveat: OSM sometimes maps a mall's parking as a multipolygon *relation* (ring with
     # islands for landscaping/lighting) rather than a plain *way* -- fetch_osm_polygons only
     # reads ways (docs/roadmap_segmentation.md's known limitation, still true), so a share of
@@ -69,9 +70,19 @@ LANDUSE_AOIS: list[LanduseAOI] = [
     # WARRNING les très grands parkings de centres commerciaux sont souvent cartographiés sur OSM comme des relations 
     # (anneau extérieur + îlots découpés pour les espaces verts/luminaires) plutôt que des way simples. 
     # Ça veut dire qu'une partie — potentiellement les plus gros — des parkings de ces nouvelles AOI pourrait quand même être ratée.
-    LanduseAOI("lille_englos", _town_bbox(50.6386, 2.9634), "59"),  # zone commerciale Englos-les-Geants
-    LanduseAOI("marseille_plan_de_campagne", _town_bbox(43.4167, 5.3167), "13"),  # one of Europe's largest open-air retail zones
-    LanduseAOI("velizy", _town_bbox(48.7833, 2.1917), "78"),  # Velizy 2 shopping center, Paris region
-    LanduseAOI("bordeaux_lac", _town_bbox(44.8893, -0.5622), "33"),  # Bordeaux-Lac retail zone
+    #
+    # NB: an earlier version of this list had lille_englos (50.6386, 2.9634), marseille
+    # Plan-de-Campagne (43.4167, 5.3167), velizy (48.7833, 2.1917) and bordeaux_lac
+    # (44.8893, -0.5622) here -- all four silently read back a sliver instead of the full
+    # AOI (same MGRS-tile-boundary issue as Le Havre/Fos-sur-Mer above; confirmed by
+    # directly probing rasterio's actual read shape against Planetary Computer, e.g.
+    # lille_englos read 152x806px of a nominal ~2226x2126px window). lille_englos had no
+    # working substitute nearby -- the whole Lille conurbation sits on the same tile edge,
+    # and douai/lens above already cover that tile's usable portion -- so it was dropped.
+    # The other three were replaced below with the nearest verified-clean equivalent
+    # (ratio of actual-to-nominal read pixels ~1.0, checked directly, not assumed).
+    LanduseAOI("vitrolles", _town_bbox(43.4581, 5.2483), "13"),  # retail zone next to Plan-de-Campagne, different MGRS tile
+    LanduseAOI("val_europe", _town_bbox(48.8720, 2.7850), "77"),  # Disneyland Paris / Val d'Europe -- one of the largest parking areas in the Paris region
+    LanduseAOI("bordeaux_merignac", _town_bbox(44.8407, -0.6478), "33"),  # Merignac retail zone, next to Bordeaux airport
     LanduseAOI("toulouse_labege", _town_bbox(43.5464, 1.5145), "31"),  # Labege retail/technopole zone
 ]
