@@ -37,8 +37,6 @@ CLASS_PREVIEW_COLORS = {
 }
 
 MIN_PARKING_AREA_M2 = 1500  # proxy for the loi APER (2023) large-parking threshold
-# No longer applied here by default (see rasterize_landuse_mask's min_parking_area_m2=0) --
-# used at prediction time instead, see helpers/mask_postprocess.filter_small_regions.
 
 
 def _polygon_area_m2(ring: Ring) -> float:
@@ -66,7 +64,7 @@ def rasterize_landuse_mask(
     cartofriches_friches: list[Ring],
     osm_residential: list[Ring] = (),
     osm_holes: list[Ring] = (),
-    min_parking_area_m2: float = 0,
+    min_parking_area_m2: float = MIN_PARKING_AREA_M2,
 ) -> np.ndarray:
     """Burn all polygons into a single uint8 mask, `scene_shape` = (height, width).
 
@@ -78,17 +76,14 @@ def rasterize_landuse_mask(
     last -- a reclaimed industrial site must read as friche even if it happens to sit inside
     a hole, per docs/roadmap_segmentation.md §1.
 
-    @param min_parking_area_m2: default 0 (no filtering) -- *every* parking, regardless of
-    size, is labeled Parking in training masks now. Filtering by the loi APER threshold
-    (`MIN_PARKING_AREA_M2`) here used to mean lots of small, visually-identical parkings
-    (driveways, small lots) were labeled Fond instead, teaching the model an inconsistent
-    boundary it can't actually see in the pixels (same bitumen/cars/markings either way) --
-    and Parking pixels were already the rarest signal in the dataset by far, so throwing
-    away most of the available examples made that worse, not better. The business-relevant
-    threshold is now applied at prediction time instead, on the *predicted* mask's connected
-    components (`helpers/mask_postprocess.filter_small_regions`), so the model still learns
-    from every parking-looking surface while the final reported result only counts the ones
-    that actually qualify. See docs/roadmap_segmentation.md §8.
+    @param min_parking_area_m2: tried dropping this to 0 (label every parking, any size, and
+    filter only at prediction time -- see `helpers/mask_postprocess.filter_small_regions`,
+    still used there) to give Parking more training signal. Measured worse, not better, on
+    every metric including a same-definition comparison (see docs/roadmap_segmentation.md
+    §8, item 9): at 10m/pixel Sentinel-2 resolution a small parking (well under one pixel's
+    footprint) doesn't have a clean bitument/cars/markings signature the way a large one
+    does -- its pixel is dominated by whatever surrounds it (garden, roof, driveway edge),
+    so labeling it Parking adds label noise, not useful signal. Reverted to filtering here.
     """
     residential_proj = _reproject_rings(osm_residential, scene_crs)
     parking_proj = _reproject_rings(osm_parking, scene_crs)
