@@ -87,18 +87,26 @@ def _relation_member_rings(el: dict) -> tuple[list[Ring], list[Ring]]:
 
 def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 120) -> dict[str, list[Ring]]:
     """Fetch parking, industrial/commercial and residential polygons from OSM (Overpass API),
-    from both plain ways and multipolygon relations.
+    from plain ways plus (parking only) multipolygon relations.
 
     @param bbox: min_lon, min_lat, max_lon, max_lat (WGS84).
     @return {"parking": [...], "industrial": [...], "residential": [...], "holes": [...]},
-    each a list of closed (lon, lat) rings. "holes" collects the inner rings of any
-    multipolygon relation across all three categories -- they don't need their own class,
-    painting them as background is enough (see `rasterize_landuse_mask`'s `osm_holes` param).
+    each a list of closed (lon, lat) rings. "holes" collects the inner rings of parking
+    multipolygon relations -- they don't need their own class, painting them as background
+    is enough (see `rasterize_landuse_mask`'s `osm_holes` param).
 
     Large parking lots (the >1500m^2 loi APER threshold this project targets) are often
     mapped on OSM as a multipolygon relation -- an outer ring plus inner-ring holes cut out
     for landscaping/lighting islands -- rather than a plain way; ways alone under-count
     exactly the biggest parkings this project cares about.
+
+    Relations are fetched for `amenity=parking` only, not industrial/residential: a first
+    version queried all three and every AOI started timing out on every Overpass mirror,
+    even ones that used to fetch fine way-only -- a `landuse=residential` relation can span a
+    whole neighborhood with hundreds of member ways, making `out geom;` resolve it far more
+    expensive server-side. Parking is also the only class this was meant to fix (see
+    docs/roadmap_segmentation.md and the train_unet_landuse.ipynb discussion) -- ways already
+    cover industrial/residential reasonably.
     """
     min_lon, min_lat, max_lon, max_lat = bbox
     overpass_bbox = f"{min_lat},{min_lon},{max_lat},{max_lon}"  # Overpass wants south,west,north,east
@@ -111,9 +119,6 @@ def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 1
       way["landuse"~"^(industrial|commercial)$"]({overpass_bbox});
       way["landuse"="residential"]({overpass_bbox});
       rel["amenity"="parking"]["type"="multipolygon"]({overpass_bbox});
-      rel["building"~"^(industrial|warehouse)$"]["type"="multipolygon"]({overpass_bbox});
-      rel["landuse"~"^(industrial|commercial)$"]["type"="multipolygon"]({overpass_bbox});
-      rel["landuse"="residential"]["type"="multipolygon"]({overpass_bbox});
     );
     out geom;
     """
