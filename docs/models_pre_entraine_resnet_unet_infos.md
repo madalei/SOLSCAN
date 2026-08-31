@@ -11,10 +11,10 @@ U-Net a une structure en encodeur → décodeur :
 
 C'est ce que fait segmentation_models_pytorch : ResNet34 n'est réutilisé que comme encodeur remplaçable, pas comme modèle complet — le vrai "modèle" ici, c'est U-Net, qui a juste besoin d'un backbone pour sa moitié descendante.
 
-### Pourquoi 2 modèles dans le projet ?
+## Pourquoi 2 modèles dans le projet ?
 Parce que ce sont deux tâches différentes : ResNet18/EuroSAT fait de la classification (répétition générale, prouve que le pipeline bout-en-bout marche) ; U-Net fait de la segmentation pixel (l'objectif réel du projet — des frontières précises pour calculer une surface, pas juste une étiquette par tuile de 64px).
 
-### Est-ce que U-Net aurait pu utiliser ResNet18 comme encodeur ?
+## Est-ce que U-Net aurait pu utiliser ResNet18 comme encodeur ?
 Oui, sans problème — build_unet(num_classes, device, encoder_name="resnet34") a un paramètre encoder_name, et segmentation_models_pytorch supporte "resnet18" comme n'importe quel autre backbone. Le choix de ResNet34 plutôt que ResNet18 est indépendant du choix fait pour EuroSAT — c'est un compromis propre au U-Net, documenté dans le docstring de models/unet_builder.py:10 : "resnet34, a good accuracy/speed tradeoff" (un peu plus profond que ResNet18, donc plus de capacité, tout en restant raisonnable en coût de calcul).
 
 Et pour être précis : le ResNet18 fine-tuné sur EuroSAT et le ResNet34 encodeur du U-Net sont deux réseaux entraînés séparément, sur des tâches et des données différentes, sauvegardés dans deux checkpoints distincts (resnet18_eurosat_label_smoothing.pth vs unet_landuse.pth) — aucun poids n'est partagé entre les deux.
@@ -24,9 +24,21 @@ Et pour être précis : le ResNet18 fine-tuné sur EuroSAT et le ResNet34 encode
 ### Segmentation (branche unet) 
 Sur cette branche, le masque de vérité terrain n'est pas dessiné à la main. Il est généré automatiquement à partir de bases géographiques existantes, dans helpers/mask_rasterize.py (sur la branche unet) :
 
-- On récupère des polygones géographiques déjà connus : parkings et zones industrielles via OpenStreetMap (Overpass API), friches via Cartofriches.
+#### Fabrication du dataset d'entrainement pour U-NET
 
-- On "brûle" (rasterize) ces polygones sur une grille de pixels alignée sur la tuile Sentinel-2 : chaque pixel reçoit l'ID de classe du polygone qui le contient (0=fond, 1=parking, 2=industriel, 3=friche).
+`notebooks/fetch_landuse_dataset.ipynb` orchestre tout : pour chaque AOI de la liste — récupère la scène Sentinel-2 (Planetary Computer), fetch les polygones via geo_fetch, les reprojette dans le CRS de la scène, les rasterise en un masque multi-classe (via helpers/mask_rasterize.py), puis découpe image et masque en tuiles fixes.
+
+1. `helpers/landuse_aois.py` fournit la liste des AOI (bbox + département) à traiter.
+2. `helpers/geo_fetch.py` On récupère des polygones géographiques déjà connus : parkings et zones industrielles via OpenStreetMap (Overpass API), friches via Cartofriches.
+
+3. `helpers/mask_rasterize.py` On "brûle" (rasterize) ces polygones sur une grille de pixels alignée sur la tuile Sentinel-2 : chaque pixel reçoit l'ID de classe du polygone qui le contient (0=fond, 1=parking, 2=industriel, 3=friche).
+
+4. Le résultat est écrit sur disque dans data/landuse/ :
+data/landuse/images/{aoi}_tile_{row}_{col}.png — la tuile Sentinel-2 (RGB)
+data/landuse/masks/{aoi}_tile_{row}_{col}.png — le masque correspondant (indices de classe 0-3 : fond/parking/industriel/friche)
+data/landuse/masks_preview/ — une version coloriée du masque, juste pour l'inspection visuelle
+
+5. En aval, helpers/segmentation_dataset.py (le Dataset PyTorch) charge ces paires image/masque, et notebooks/train_unet_landuse.ipynb + training/seg_engine.py s'en servent pour entraîner le U-Net (models/unet_builder.py).
 
 Donc **la vérité terrain vient de données publiques déjà cartographiées**, pas d'annotation manuelle. C'est le "Option 1 / fine-tuning" évoqué dans ton CLAUDE.md, version pragmatique : au lieu d'annoter à la main dans QGIS, on réutilise des polygones qui existent déjà.
 
