@@ -2,8 +2,10 @@
     EuroSAT loading/preprocessing + a generic train/val/test DataLoader splitter.
 """
 
+import numpy as np
 import torch
-from torch.utils.data import DataLoader, random_split
+from sklearn.model_selection import GroupKFold
+from torch.utils.data import DataLoader, Subset, random_split
 from pathlib import Path
 from torchvision import transforms
 from torchvision.datasets import EuroSAT
@@ -53,6 +55,44 @@ def build_dataloaders(dataset, batch_size: int, train_frac: float = 0.7, val_fra
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=0)
 
     return train_loader, val_loader, test_loader
+
+
+def build_group_kfold_dataloaders(dataset, groups, batch_size: int, n_splits: int = 5, seed: int = 42, train_dataset=None):
+    """
+        Group K-fold splitter: yields one (train_loader, val_loader, train_subset) per fold,
+        guaranteeing every item sharing the same group value stays entirely in train OR val
+        (never split across the two).
+
+        Use this instead of build_dataloaders' plain random_split when items aren't
+        independent -- e.g. landuse tiles from the same AOI/town look visually similar (same
+        acquisition date, same building style), so a random split would leak that similarity
+        between train and val and make the val score overly optimistic about generalization
+        to a genuinely new area. `groups` should give each item's AOI/town name in that case.
+
+        @param dataset: any indexable Dataset (e.g. SegmentationTileDataset).
+        @param groups: sequence of length len(dataset), one group label per item.
+        @param n_splits: number of folds (also the max number of distinct groups usable).
+        @param train_dataset: optional dataset instance sharing `dataset`'s index space and
+        length (e.g. the same SegmentationTileDataset with augment=True instead of False),
+        used to build the train split instead of `dataset` -- lets the train side get data
+        augmentation while val stays on the clean instance, so its score is stable/comparable
+        across folds. Defaults to `dataset` (no augmentation) when omitted.
+        @return generator of (fold_idx, train_loader, val_loader, train_subset) tuples --
+        train_subset is returned alongside the loader because callers typically need the raw
+        Subset too (e.g. compute_class_pixel_weights takes a Subset, not a DataLoader).
+    """
+    train_dataset = dataset if train_dataset is None else train_dataset
+    gkf = GroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    indices = np.arange(len(dataset))
+
+    for fold_idx, (train_idx, val_idx) in enumerate(gkf.split(indices, groups=groups)):
+        train_subset = Subset(train_dataset, train_idx)
+        val_subset = Subset(dataset, val_idx)
+
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=0)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+        yield fold_idx, train_loader, val_loader, train_subset
 
 
 # ============================================================================
