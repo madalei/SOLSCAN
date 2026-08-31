@@ -1,3 +1,4 @@
+import random
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +23,26 @@ def build_segmentation_image_transform():
     ])
 
 
+def _augment_pair(image: Image.Image, mask: Image.Image) -> tuple[Image.Image, Image.Image]:
+    """Randomly flip/rotate image and mask identically, by the same random draws.
+
+    Only PIL `transpose` ops (flip/90-degree rotations) -- these permute pixels exactly with
+    no interpolation, unlike an arbitrary-angle rotation or resize, which would blend
+    neighboring class indices into invalid fractional values in the mask.
+    """
+    if random.random() < 0.5:
+        image = image.transpose(Image.FLIP_LEFT_RIGHT)
+        mask = mask.transpose(Image.FLIP_LEFT_RIGHT)
+    if random.random() < 0.5:
+        image = image.transpose(Image.FLIP_TOP_BOTTOM)
+        mask = mask.transpose(Image.FLIP_TOP_BOTTOM)
+    rotation = random.choice([None, Image.ROTATE_90, Image.ROTATE_180, Image.ROTATE_270])
+    if rotation is not None:
+        image = image.transpose(rotation)
+        mask = mask.transpose(rotation)
+    return image, mask
+
+
 class SegmentationTileDataset(Dataset):
     """Pairs of (RGB tile, class-index mask) PNGs, matched by filename across two directories.
 
@@ -30,10 +51,16 @@ class SegmentationTileDataset(Dataset):
     [0, 1]) and cast to long, exactly like the label tensors expected by CrossEntropyLoss.
     """
 
-    def __init__(self, images_dir, masks_dir, image_transform=None):
+    def __init__(self, images_dir, masks_dir, image_transform=None, augment: bool = False):
+        """
+        @param augment: apply random flip/90-degree-rotation augmentation (see
+        `_augment_pair`). Only meaningful for a train split -- val/test should stay on an
+        instance with augment=False so their metrics are stable across epochs/folds.
+        """
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir)
         self.image_transform = image_transform or build_segmentation_image_transform()
+        self.augment = augment
 
         self.filenames = sorted(p.name for p in self.images_dir.glob("*.png"))
         missing = [name for name in self.filenames if not (self.masks_dir / name).exists()]
@@ -47,9 +74,12 @@ class SegmentationTileDataset(Dataset):
         name = self.filenames[idx]
 
         image = Image.open(self.images_dir / name).convert("RGB")
-        image = self.image_transform(image)
-
         mask = Image.open(self.masks_dir / name)
+
+        if self.augment:
+            image, mask = _augment_pair(image, mask)
+
+        image = self.image_transform(image)
         mask = pil_to_tensor(mask).squeeze(0).long()
 
         return image, mask
