@@ -52,4 +52,26 @@ LANDUSE_AOIS: list[LanduseAOI] = [
     # Haute-Savoie: cross-border industrial/commercial zone near Geneva, alpine-valley
     # terrain -- visually very different from the flat northern-France AOIs above.
     LanduseAOI("annemasse", _town_bbox(46.1933, 6.2350), "74"),
+    # Targeted at the Parking class specifically -- it's the rarest class by far (~0.2% of
+    # pixels dataset-wide) and stayed near-0 IoU even after class weighting, data
+    # augmentation and multi-AOI generalization fixes (see docs/roadmap_segmentation.md and
+    # the train_unet_landuse.ipynb discussion). None of the AOIs above were chosen for
+    # parking density -- these are, centered on large retail/shopping zones known for big
+    # surface parking lots (the >1500m^2 loi APER threshold this class targets), spread
+    # across regions/departments not yet covered for added visual diversity.
+    # Caveat: OSM sometimes maps a mall's parking as a multipolygon *relation* (ring with
+    # islands for landscaping/lighting) rather than a plain *way* -- fetch_osm_polygons only
+    # reads ways (docs/roadmap_segmentation.md's known limitation, still true), so a share of
+    # exactly the biggest parkings these AOIs are chosen for may still be missed. Worth
+    # checking the fetch notebook's per-AOI parking way count before assuming this alone
+    # fixes the class.
+    
+    # WARRNING les très grands parkings de centres commerciaux sont souvent cartographiés sur OSM comme des relations 
+    # (anneau extérieur + îlots découpés pour les espaces verts/luminaires) plutôt que des way simples. 
+    # Ça veut dire qu'une partie — potentiellement les plus gros — des parkings de ces nouvelles AOI pourrait quand même être ratée.
+    LanduseAOI("lille_englos", _town_bbox(50.6386, 2.9634), "59"),  # zone commerciale Englos-les-Geants
+    LanduseAOI("marseille_plan_de_campagne", _town_bbox(43.4167, 5.3167), "13"),  # one of Europe's largest open-air retail zones
+    LanduseAOI("velizy", _town_bbox(48.7833, 2.1917), "78"),  # Velizy 2 shopping center, Paris region
+    LanduseAOI("bordeaux_lac", _town_bbox(44.8893, -0.5622), "33"),  # Bordeaux-Lac retail zone
+    LanduseAOI("toulouse_labege", _town_bbox(43.5464, 1.5145), "31"),  # Labege retail/technopole zone
 ]
