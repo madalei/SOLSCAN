@@ -63,20 +63,24 @@ def rasterize_landuse_mask(
     osm_industrial: list[Ring],
     cartofriches_friches: list[Ring],
     osm_residential: list[Ring] = (),
+    osm_holes: list[Ring] = (),
     min_parking_area_m2: float = MIN_PARKING_AREA_M2,
 ) -> np.ndarray:
     """Burn all polygons into a single uint8 mask, `scene_shape` = (height, width).
 
     Painted in priority order (later overwrites earlier on overlap): residential first
     (lowest priority -- a parking/industrial site inside a residential landuse polygon must
-    keep its more specific class), then parking, then industrial/commercial, then friche
-    last -- a reclaimed industrial site must read as friche, per
-    docs/roadmap_segmentation.md §1.
+    keep its more specific class), then parking, then industrial/commercial, then holes
+    (inner rings of OSM multipolygon relations -- landscaping/lighting islands inside a
+    parking/industrial/residential outer ring, painted back to background), then friche
+    last -- a reclaimed industrial site must read as friche even if it happens to sit inside
+    a hole, per docs/roadmap_segmentation.md §1.
     """
     residential_proj = _reproject_rings(osm_residential, scene_crs)
     parking_proj = _reproject_rings(osm_parking, scene_crs)
     industrial_proj = _reproject_rings(osm_industrial, scene_crs)
     friche_proj = _reproject_rings(cartofriches_friches, scene_crs)
+    holes_proj = _reproject_rings(osm_holes, scene_crs)
 
     parking_proj = [ring for ring in parking_proj if _polygon_area_m2(ring) >= min_parking_area_m2]
 
@@ -87,6 +91,8 @@ def rasterize_landuse_mask(
         shapes.append(({"type": "Polygon", "coordinates": [ring]}, CLASS_PARKING))
     for ring in industrial_proj:
         shapes.append(({"type": "Polygon", "coordinates": [ring]}, CLASS_INDUSTRIAL))
+    for ring in holes_proj:
+        shapes.append(({"type": "Polygon", "coordinates": [ring]}, CLASS_BACKGROUND))
     for ring in friche_proj:
         shapes.append(({"type": "Polygon", "coordinates": [ring]}, CLASS_FRICHE))
 

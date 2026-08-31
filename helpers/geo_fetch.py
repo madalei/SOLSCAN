@@ -55,13 +55,50 @@ def _request_with_retries(method: str, urls: list[str], *, retry_delay_s: float 
     raise last_exc
 
 
+def _relation_member_rings(el: dict) -> tuple[list[Ring], list[Ring]]:
+    """Extract (outer_rings, inner_rings) from an Overpass multipolygon *relation* element.
+
+    `out geom;` embeds each member way's point geometry directly in the relation response --
+    no separate recursed way query needed. Inner rings (role="inner") are holes (typically
+    small landscaping/lighting islands inside a large parking lot); callers should paint
+    them back to background rather than skip them outright, since skipping would just as
+    wrongly paint the hole area as the outer class.
+
+    Simplification: each "outer"-role member way is treated as its own closed ring. This is
+    correct for the common case (one outer way = the whole boundary) but an approximation
+    for a boundary split across several outer ways -- not handled, no shapely/geopandas
+    dependency in this project (see docs/roadmap_segmentation.md). Still strictly better
+    than skipping relations entirely (the previous behavior).
+    """
+    outer_rings, inner_rings = [], []
+    for member in el.get("members", []):
+        if member.get("type") != "way":
+            continue
+        geometry = member.get("geometry")
+        if not geometry or len(geometry) < 3:
+            continue
+        ring = _close_ring([(pt["lon"], pt["lat"]) for pt in geometry])
+        if member.get("role") == "inner":
+            inner_rings.append(ring)
+        else:  # "outer" or unspecified -- treat as outer
+            outer_rings.append(ring)
+    return outer_rings, inner_rings
+
+
 def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 120) -> dict[str, list[Ring]]:
-    """Fetch parking, industrial/commercial and residential way polygons from OSM (Overpass API).
+    """Fetch parking, industrial/commercial and residential polygons from OSM (Overpass API),
+    from both plain ways and multipolygon relations.
 
     @param bbox: min_lon, min_lat, max_lon, max_lat (WGS84).
-    @return {"parking": [...], "industrial": [...], "residential": [...rings...]}, each ring
-    a closed list of (lon, lat) points. Only closed ways are usable as polygons -- relations
-    (multipolygons) are skipped (see docs/roadmap_segmentation.md, not handled yet).
+    @return {"parking": [...], "industrial": [...], "residential": [...], "holes": [...]},
+    each a list of closed (lon, lat) rings. "holes" collects the inner rings of any
+    multipolygon relation across all three categories -- they don't need their own class,
+    painting them as background is enough (see `rasterize_landuse_mask`'s `osm_holes` param).
+
+    Large parking lots (the >1500m^2 loi APER threshold this project targets) are often
+    mapped on OSM as a multipolygon relation -- an outer ring plus inner-ring holes cut out
+    for landscaping/lighting islands -- rather than a plain way; ways alone under-count
+    exactly the biggest parkings this project cares about.
     """
     min_lon, min_lat, max_lon, max_lat = bbox
     overpass_bbox = f"{min_lat},{min_lon},{max_lat},{max_lon}"  # Overpass wants south,west,north,east
@@ -73,6 +110,10 @@ def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 1
       way["building"~"^(industrial|warehouse)$"]({overpass_bbox});
       way["landuse"~"^(industrial|commercial)$"]({overpass_bbox});
       way["landuse"="residential"]({overpass_bbox});
+      rel["amenity"="parking"]["type"="multipolygon"]({overpass_bbox});
+      rel["building"~"^(industrial|warehouse)$"]["type"="multipolygon"]({overpass_bbox});
+      rel["landuse"~"^(industrial|commercial)$"]["type"="multipolygon"]({overpass_bbox});
+      rel["landuse"="residential"]["type"="multipolygon"]({overpass_bbox});
     );
     out geom;
     """
@@ -83,25 +124,36 @@ def fetch_osm_polygons(bbox: tuple[float, float, float, float], timeout: int = 1
     )
     elements = resp.json().get("elements", [])
 
-    polygons: dict[str, list[Ring]] = {"parking": [], "industrial": [], "residential": []}
+    polygons: dict[str, list[Ring]] = {"parking": [], "industrial": [], "residential": [], "holes": []}
     seen_ids = set()
     for el in elements:
-        if el.get("type") != "way" or el["id"] in seen_ids:
+        el_type = el.get("type")
+        if el_type not in ("way", "relation"):
             continue
-        seen_ids.add(el["id"])
+        key = (el_type, el["id"])
+        if key in seen_ids:
+            continue
+        seen_ids.add(key)
 
-        geometry = el.get("geometry")
-        if not geometry or len(geometry) < 3:
-            continue  # not a usable polygon (open way / missing nodes)
-
-        ring = _close_ring([(pt["lon"], pt["lat"]) for pt in geometry])
         tags = el.get("tags", {})
         if tags.get("amenity") == "parking":
-            polygons["parking"].append(ring)
+            category = "parking"
         elif tags.get("building") in ("industrial", "warehouse") or tags.get("landuse") in ("industrial", "commercial"):
-            polygons["industrial"].append(ring)
+            category = "industrial"
         elif tags.get("landuse") == "residential":
-            polygons["residential"].append(ring)
+            category = "residential"
+        else:
+            continue
+
+        if el_type == "way":
+            geometry = el.get("geometry")
+            if not geometry or len(geometry) < 3:
+                continue  # not a usable polygon (open way / missing nodes)
+            polygons[category].append(_close_ring([(pt["lon"], pt["lat"]) for pt in geometry]))
+        else:
+            outer_rings, inner_rings = _relation_member_rings(el)
+            polygons[category].extend(outer_rings)
+            polygons["holes"].extend(inner_rings)
 
     return polygons
 
